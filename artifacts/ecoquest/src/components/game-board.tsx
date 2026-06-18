@@ -11,6 +11,7 @@ interface Particle { x: number; y: number; vx: number; vy: number; life: number;
 interface OverlayState { tileIndex: number; type: "hazard" | "bonus"; startT: number; duration: number; }
 interface PlayerAnimState { currentTile: number; targetTile: number; moveQueue: number[]; moveLerp: number; bounceTimer: number; movingForward: boolean; stepTimer: number; trailX: number; trailY: number; }
 interface CameraState { cx: number; cy: number; zoom: number; tcx: number; tcy: number; tz: number; returnTimer: number; initialized: boolean; followingPlayer: boolean; }
+interface PredatorCutscene { predatorType: 'eagle' | 'wolf' | 'tiger'; boardTx: number; boardTy: number; startT: number; duration: number; }
 
 // ── Board constants ───────────────────────────────────────────────────────────
 const COLS = 10;
@@ -587,6 +588,244 @@ function drawOverlay(ctx: CanvasRenderingContext2D, overlay: OverlayState, elaps
   ctx.restore();
 }
 
+// ── Predator Drawing Functions ────────────────────────────────────────────────
+
+function drawEagleShape(ctx: CanvasRenderingContext2D, cx: number, cy: number, sz: number, wingFold: number, angle: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+  ctx.scale(sz / 60, sz / 60);
+  const ws = 60 * (1 - wingFold * 0.78);
+  // Shadow on ground
+  ctx.save(); ctx.globalAlpha *= 0.22; ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(2, 32 * (1 - wingFold * 0.5), 40 * (1 - wingFold * 0.6), 7, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  // Left wing
+  ctx.fillStyle = '#1a0f00';
+  ctx.beginPath(); ctx.moveTo(-5, 0);
+  ctx.bezierCurveTo(-18, -ws * 0.38, -ws, -ws * 0.52, -ws * 0.92, ws * 0.14);
+  ctx.bezierCurveTo(-ws * 0.5, ws * 0.1, -12, ws * 0.06, -5, 5); ctx.closePath(); ctx.fill();
+  // Right wing
+  ctx.beginPath(); ctx.moveTo(-5, 0);
+  ctx.bezierCurveTo(-18, ws * 0.38, -ws, ws * 0.52, -ws * 0.92, -ws * 0.14);
+  ctx.bezierCurveTo(-ws * 0.5, -ws * 0.1, -12, -ws * 0.06, -5, -5); ctx.closePath(); ctx.fill();
+  // Body
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.ellipse(0, 0, 28, 11, 0, 0, Math.PI * 2); ctx.fill();
+  // White head (bald eagle)
+  ctx.fillStyle = '#f0ede0';
+  ctx.beginPath(); ctx.arc(24, 0, 12, 0, Math.PI * 2); ctx.fill();
+  // White tail
+  ctx.fillStyle = '#f0ede0';
+  ctx.beginPath(); ctx.moveTo(-22, 0); ctx.lineTo(-38, -9); ctx.lineTo(-38, 9); ctx.closePath(); ctx.fill();
+  // Eye
+  ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(30, -2, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(30.5, -2, 2, 0, Math.PI * 2); ctx.fill();
+  // Beak
+  ctx.fillStyle = '#f59e0b';
+  ctx.beginPath(); ctx.moveTo(34, -1); ctx.lineTo(44, 2); ctx.lineTo(35, 5); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawWolfShape(ctx: CanvasRenderingContext2D, cx: number, cy: number, sz: number, runPhase: number, _facingRight: boolean) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(sz / 60, sz / 60);
+  const lb = Math.sin(runPhase * Math.PI * 2) * 16;
+  // Body
+  ctx.fillStyle = '#4a4040';
+  ctx.beginPath(); ctx.ellipse(0, 0, 32, 15, -0.12, 0, Math.PI * 2); ctx.fill();
+  // Tail
+  ctx.strokeStyle = '#3a3030'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-28, 0); ctx.quadraticCurveTo(-50, -18, -54, -40); ctx.stroke();
+  // Legs
+  ctx.strokeStyle = '#3a3030'; ctx.lineWidth = 10;
+  ctx.beginPath(); ctx.moveTo(20, 10); ctx.lineTo(28 + lb * 0.5, 28); ctx.lineTo(22 + lb, 40); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(10, 12); ctx.lineTo(14 - lb * 0.5, 28); ctx.lineTo(8 - lb, 40); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-20, 10); ctx.lineTo(-28 - lb * 0.5, 26); ctx.lineTo(-22 - lb, 38); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-10, 12); ctx.lineTo(-6 + lb * 0.5, 26); ctx.lineTo(-2 + lb, 38); ctx.stroke();
+  // Head
+  ctx.fillStyle = '#5a4f4f';
+  ctx.beginPath(); ctx.ellipse(36, -10, 18, 14, 0.28, 0, Math.PI * 2); ctx.fill();
+  // Ears
+  ctx.fillStyle = '#3a3030';
+  ctx.beginPath(); ctx.moveTo(28, -22); ctx.lineTo(24, -40); ctx.lineTo(38, -28); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(40, -22); ctx.lineTo(40, -38); ctx.lineTo(52, -26); ctx.closePath(); ctx.fill();
+  // Snout
+  ctx.fillStyle = '#6e6060'; ctx.beginPath(); ctx.ellipse(48, -6, 10, 8, 0.1, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1a1010'; ctx.beginPath(); ctx.ellipse(54, -5, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+  // Eye
+  ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(42, -13, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(43, -13, 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawTigerShape(ctx: CanvasRenderingContext2D, cx: number, cy: number, sz: number, crouchAmt: number, elapsed: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(sz / 60, sz / 60);
+  const dy = crouchAmt * 10;
+  // Body
+  ctx.fillStyle = '#c2560a';
+  ctx.beginPath(); ctx.ellipse(0, dy, 36, 18 - crouchAmt * 5, -0.1, 0, Math.PI * 2); ctx.fill();
+  // Stripes
+  ctx.strokeStyle = '#7a2c00'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  for (let s = 0; s < 5; s++) { const sx = (s - 2) * 12; ctx.beginPath(); ctx.moveTo(sx, dy - 17); ctx.lineTo(sx + 4, dy + 17); ctx.stroke(); }
+  // Tail
+  ctx.strokeStyle = '#c2560a'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-32, dy + 6); ctx.quadraticCurveTo(-55, dy - 12, -58, dy - 36 + Math.sin(elapsed * 3) * 8); ctx.stroke();
+  ctx.strokeStyle = '#1a0a00'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(-54, dy - 32 + Math.sin(elapsed * 3) * 8); ctx.lineTo(-64, dy - 42 + Math.sin(elapsed * 3) * 8); ctx.stroke();
+  // Legs
+  ctx.strokeStyle = '#b24c08'; ctx.lineWidth = 12;
+  const ld = crouchAmt * 6;
+  ctx.beginPath(); ctx.moveTo(22, dy + 14); ctx.lineTo(18, dy + 34 + ld); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(8, dy + 16); ctx.lineTo(4, dy + 36 + ld); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-22, dy + 14); ctx.lineTo(-24, dy + 34 + ld); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-10, dy + 16); ctx.lineTo(-12, dy + 36 + ld); ctx.stroke();
+  // Head
+  ctx.fillStyle = '#d4620c'; ctx.beginPath(); ctx.ellipse(38, dy - 12, 22, 18, 0.2, 0, Math.PI * 2); ctx.fill();
+  // Ears
+  ctx.fillStyle = '#b24c08';
+  ctx.beginPath(); ctx.moveTo(28, dy - 26); ctx.lineTo(22, dy - 42); ctx.lineTo(38, dy - 28); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(44, dy - 26); ctx.lineTo(44, dy - 42); ctx.lineTo(56, dy - 28); ctx.closePath(); ctx.fill();
+  // Face
+  ctx.fillStyle = '#f5c9a0'; ctx.beginPath(); ctx.ellipse(42, dy - 8, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+  // Eyes
+  ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(34, dy - 17, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(34.5, dy - 17, 2.8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(46, dy - 17, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(46.5, dy - 17, 2.8, 0, Math.PI * 2); ctx.fill();
+  // Nose
+  ctx.fillStyle = '#e05a7a'; ctx.beginPath(); ctx.arc(42, dy - 3, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawPredatorCutscene(
+  ctx: CanvasRenderingContext2D,
+  scene: PredatorCutscene,
+  elapsed: number,
+  W: number, H: number, tH: number,
+  zoom: number, cx: number, cy: number,
+) {
+  const prog = Math.min(1, elapsed / scene.duration);
+  // Convert board target to screen space
+  const stx = scene.boardTx * zoom + W / 2 - cx * zoom;
+  const sty = scene.boardTy * zoom + H / 2 - cy * zoom;
+  const sz = Math.max(44, H * 0.17) * zoom;
+
+  // Vignette / dim
+  const dimA = Math.min(1, prog / 0.1) * (prog > 0.86 ? Math.max(0, 1 - (prog - 0.86) / 0.14) : 1) * 0.6;
+  ctx.save(); ctx.globalAlpha = dimA; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore();
+
+  // HAZARD banner
+  const bannerA = Math.min(1, prog / 0.08) * (prog > 0.68 ? Math.max(0, 1 - (prog - 0.68) / 0.16) : 1);
+  if (bannerA > 0) {
+    ctx.save(); ctx.globalAlpha = bannerA;
+    const bh = Math.max(22, H * 0.075), bfs = Math.max(14, H * 0.05);
+    ctx.fillStyle = 'rgba(185,18,18,0.92)';
+    ctx.beginPath(); ctx.roundRect(W / 2 - bh * 3.2, H * 0.07 - bh * 0.5, bh * 6.4, bh, bh * 0.22); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.shadowColor = '#ff4444'; ctx.shadowBlur = 18;
+    ctx.font = `bold ${bfs}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('⚠  HAZARD!', W / 2, H * 0.07); ctx.restore();
+  }
+
+  // ── Eagle cutscene ──────────────────────────────────────────────────────────
+  if (scene.predatorType === 'eagle') {
+    let ex: number, ey: number, angle: number, wingFold: number, alpha = 1;
+    if (prog < 0.33) {
+      const p = eio(prog / 0.33);
+      ex = W * 1.12 + (stx - W * 1.12) * p; ey = -H * 0.12 + (sty - sz * 1.6 - (-H * 0.12)) * p;
+      angle = Math.atan2(sty - sz - (-H * 0.12), stx - W * 1.12) * 0.35; wingFold = 0.07;
+    } else if (prog < 0.62) {
+      const p = eio((prog - 0.33) / 0.29);
+      const sx0 = stx - W * 0.1, sy0 = sty - sz * 1.5;
+      ex = sx0 + (stx - sx0) * p; ey = sy0 + (sty - sz * 0.35 - sy0) * p;
+      angle = -0.55 + p * 0.35; wingFold = 0.06 + p * 0.9;
+    } else if (prog < 0.73) {
+      const p = (prog - 0.62) / 0.11;
+      ex = stx; ey = sty - sz * 0.35; angle = -0.2; wingFold = 0.96; alpha = 1 - p * 0.25;
+      // Flash
+      ctx.save(); ctx.globalAlpha = (1 - p) * 0.75;
+      ctx.fillStyle = '#fff8d0'; ctx.beginPath(); ctx.arc(stx, sty, sz * (1 + p * 2.8), 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      // Shockwave rings
+      for (let r = 0; r < 3; r++) {
+        const rp = (p + r * 0.3) % 1;
+        ctx.save(); ctx.globalAlpha = (1 - rp) * 0.65; ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = Math.max(2, H * 0.004);
+        ctx.beginPath(); ctx.arc(stx, sty, sz * 0.45 + rp * sz * 2.2, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
+      // Claw marks
+      ctx.save(); ctx.globalAlpha = (1 - p) * 0.9; ctx.strokeStyle = '#ef4444'; ctx.lineWidth = Math.max(2, H * 0.005); ctx.lineCap = 'round';
+      for (let c2 = 0; c2 < 3; c2++) {
+        const ca = -0.45 + c2 * 0.38;
+        ctx.beginPath(); ctx.moveTo(stx + Math.cos(ca) * sz * 0.12, sty + Math.sin(ca) * sz * 0.12);
+        ctx.lineTo(stx + Math.cos(ca) * sz * 0.72, sty + Math.sin(ca + 0.75) * sz * 0.56); ctx.stroke();
+      }
+      ctx.restore();
+    } else {
+      const p = eio((prog - 0.73) / 0.27);
+      ex = stx + (W * 1.1 - stx) * p; ey = sty - sz * 0.35 + (-H * 0.12 - (sty - sz * 0.35)) * p;
+      angle = -0.35 - p * 0.1; wingFold = 0.96 * (1 - p * 0.88); alpha = 1 - p * 0.9;
+    }
+    ctx.save(); ctx.globalAlpha = alpha; drawEagleShape(ctx, ex, ey, sz, wingFold, angle); ctx.restore();
+  }
+
+  // ── Wolf cutscene ───────────────────────────────────────────────────────────
+  if (scene.predatorType === 'wolf') {
+    let wx: number, wy = sty - sz * 0.5, runPhase: number, alpha = 1;
+    if (prog < 0.38) {
+      const p = eio(prog / 0.38);
+      wx = -sz + (stx - sz * 1.2 - (-sz)) * p; runPhase = p * 3;
+    } else if (prog < 0.64) {
+      const p = (prog - 0.38) / 0.26;
+      wx = stx - sz * 0.8 + p * sz * 0.6; wy = sty - sz * 0.5 - p * sz * 0.32; runPhase = 0.5;
+      if (p > 0.65) {
+        const ip = (p - 0.65) / 0.35;
+        ctx.save(); ctx.globalAlpha = (1 - ip) * 0.62; ctx.fillStyle = '#fca5a5';
+        ctx.beginPath(); ctx.arc(stx, sty, sz * (0.55 + ip * 1.9), 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        for (let r = 0; r < 3; r++) {
+          const rp = (ip + r * 0.3) % 1;
+          ctx.save(); ctx.globalAlpha = (1 - rp) * 0.55; ctx.strokeStyle = '#ef4444'; ctx.lineWidth = Math.max(2, H * 0.004);
+          ctx.beginPath(); ctx.arc(stx, sty, sz * 0.45 + rp * sz * 2.1, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+        }
+      }
+    } else {
+      const p = eio((prog - 0.64) / 0.36);
+      wx = stx + (W + sz - stx) * p; runPhase = p * 4; alpha = 1 - p * 0.88;
+    }
+    ctx.save(); ctx.globalAlpha = alpha; drawWolfShape(ctx, wx, wy, sz, runPhase, true); ctx.restore();
+  }
+
+  // ── Tiger cutscene ──────────────────────────────────────────────────────────
+  if (scene.predatorType === 'tiger') {
+    let tx2 = stx, ty2 = sty - sz * 0.5, crouchAmt = 0, alpha = 1;
+    if (prog < 0.3) {
+      const p = prog / 0.3; alpha = p;
+      // Grass covers emergence
+      ctx.save(); ctx.globalAlpha = 1 - p * 0.85;
+      ctx.fillStyle = '#15571a'; ctx.fillRect(stx - sz * 1.3, sty - sz * (1 - p * 0.3), sz * 2.6, sz * (1 - p * 0.3)); ctx.restore();
+    } else if (prog < 0.6) {
+      const p = (prog - 0.3) / 0.3;
+      crouchAmt = Math.sin(p * Math.PI); ty2 = sty - sz * 0.5 - p * sz * 0.3; tx2 = stx - sz * 0.2 + p * sz * 0.4;
+    } else if (prog < 0.73) {
+      const p = (prog - 0.6) / 0.13;
+      ty2 = sty - sz * 0.08; crouchAmt = 0.1; tx2 = stx;
+      ctx.save(); ctx.globalAlpha = (1 - p) * 0.68; ctx.fillStyle = '#fde68a';
+      ctx.beginPath(); ctx.arc(stx, sty, sz * (1 + p * 2.1), 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      for (let r = 0; r < 4; r++) {
+        const rp = (p + r * 0.25) % 1;
+        ctx.save(); ctx.globalAlpha = (1 - rp) * 0.52; ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = Math.max(2, H * 0.004);
+        ctx.beginPath(); ctx.arc(stx, sty, sz * 0.35 + rp * sz * 2.2, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
+    } else {
+      const p = eio((prog - 0.73) / 0.27);
+      tx2 = stx + p * sz * 0.6; ty2 = sty - sz * 0.08 + p * sz * 1.1; alpha = 1 - p * 0.9;
+      ctx.save(); ctx.globalAlpha = p * 0.88; ctx.fillStyle = '#15571a';
+      ctx.fillRect(stx - sz * 1.3, sty - sz * p, sz * 2.6, sz * p); ctx.restore();
+    }
+    ctx.save(); ctx.globalAlpha = alpha; drawTigerShape(ctx, tx2, ty2, sz, crouchAmt, elapsed); ctx.restore();
+  }
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function GameBoard({ players, animals = [], highlightPlayerId, hazardEvent, bonusEvent }: GameBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -599,6 +838,7 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
   const particlesRef = useRef<Particle[]>([]);
   const animState = useRef<Map<string, PlayerAnimState>>(new Map());
   const cameraRef = useRef<CameraState>({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tz: 1, returnTimer: 0, initialized: false, followingPlayer: false });
+  const predatorRef = useRef<PredatorCutscene | null>(null);
 
   useEffect(() => { playersRef.current = players; }, [players]);
   useEffect(() => { animalsRef.current = animals; }, [animals]);
@@ -611,8 +851,17 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
     const W = canvas.width, H = canvas.height;
     const tW = (W - PAD * 2) / COLS, tH = (H - PAD * 2) / TOTAL_ROWS;
     const c = getTileCenter(Math.max(0, Math.min(TILES - 1, hazardEvent.tileIndex)), tW, tH);
-    cam.tcx = c.x; cam.tcy = c.y; cam.tz = 2.8; cam.returnTimer = 3.2;
-    overlayRef.current = { tileIndex: hazardEvent.tileIndex, type: "hazard", startT: performance.now() / 1000, duration: 2.8 };
+    cam.tcx = c.x; cam.tcy = c.y; cam.tz = 2.8; cam.returnTimer = 3.5;
+    // Launch predator cutscene — cycle through eagle / wolf / tiger by tile
+    const types: PredatorCutscene['predatorType'][] = ['eagle', 'wolf', 'tiger'];
+    predatorRef.current = {
+      predatorType: types[hazardEvent.tileIndex % 3],
+      boardTx: c.x, boardTy: c.y,
+      startT: performance.now() / 1000,
+      duration: 3.2,
+    };
+    // Keep a shorter overlay as a subtle underlay, cutscene takes visual priority
+    overlayRef.current = { tileIndex: hazardEvent.tileIndex, type: "hazard", startT: performance.now() / 1000, duration: 3.2 };
   }, [hazardEvent]);
 
   useEffect(() => {
@@ -966,6 +1215,18 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
       animState.current.forEach((_, id) => { if (!currentPlayers.find(p => p.id === id)) animState.current.delete(id); });
 
       ctx.restore(); // restore camera transform
+
+      // ── Predator cutscene (screen-space, drawn over everything) ──────────────
+      const predScene = predatorRef.current;
+      if (predScene) {
+        const predElapsed = t - predScene.startT;
+        if (predElapsed < predScene.duration) {
+          drawPredatorCutscene(ctx, predScene, predElapsed, W, H, tH, cam.zoom, cam.cx, cam.cy);
+        } else {
+          predatorRef.current = null;
+        }
+      }
+
       animFrameRef.current = requestAnimationFrame(render);
     };
 
