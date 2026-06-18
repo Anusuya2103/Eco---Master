@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSearch, useLocation } from "wouter";
 import { useSocket } from "@/hooks/use-socket";
 import { useListAnimals } from "@workspace/api-client-react";
 import { GameBoard, type HazardEvent, type BonusEvent } from "@/components/game-board";
+import { RestorationFinale, type FinaleWinner } from "@/components/restoration-finale";
 import { AnimalPortrait } from "@/components/animal-portrait";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -47,6 +48,8 @@ export default function HostView() {
   const [hazardEvent, setHazardEvent] = useState<HazardEvent | null>(null);
   const [bonusEvent, setBonusEvent] = useState<BonusEvent | null>(null);
   const [ecosystemHealth, setEcosystemHealth] = useState<number>(30);
+  const [finaleWinner, setFinaleWinner] = useState<FinaleWinner | null>(null);
+  const [finaleShown, setFinaleShown] = useState(false);
 
   useEffect(() => {
     if (!socket) return;
@@ -111,8 +114,19 @@ export default function HostView() {
       setPlayers(data.players);
     });
 
-    socket.on("game_over", (_data: { leaderboard: any[] }) => {
+    socket.on("game_over", (data: { leaderboard: any[]; winner?: any }) => {
       setGameState("finished");
+      if (data.winner) {
+        setFinaleWinner({
+          name: data.winner.name,
+          animalId: data.winner.animalId,
+          colorPrimary: data.winner.colorPrimary,
+          colorSecondary: data.winner.colorSecondary,
+          ecoScore: data.winner.ecoScore,
+        });
+      } else {
+        setFinaleShown(true);
+      }
     });
 
     socket.on("hazard_event", (data: { playerId: string; tileIndex: number; type?: string; penalty?: number }) => {
@@ -144,12 +158,16 @@ export default function HostView() {
   }, [socket]);
 
   useEffect(() => {
-    if (gameState === "finished" && socketRoomId) {
-      const timer = setTimeout(() => setLocation(`/results/${socketRoomId}`), 1500);
+    if (gameState === "finished" && socketRoomId && finaleShown) {
+      const timer = setTimeout(() => setLocation(`/results/${socketRoomId}`), 500);
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [gameState, socketRoomId, setLocation]);
+  }, [gameState, socketRoomId, finaleShown, setLocation]);
+
+  const handleFinaleComplete = useCallback(() => {
+    setFinaleShown(true);
+  }, []);
 
   const handleStart = () => {
     if (!socketRoomId) return;
@@ -175,6 +193,10 @@ export default function HostView() {
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-background overflow-hidden">
+      {finaleWinner && !finaleShown && (
+        <RestorationFinale winner={finaleWinner} onComplete={handleFinaleComplete} />
+      )}
+
       <div className="flex-1 relative">
         <GameBoard players={players} animals={animals} hazardEvent={hazardEvent} bonusEvent={bonusEvent} ecosystemHealth={ecosystemHealth} />
 
