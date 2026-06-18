@@ -6,7 +6,7 @@ interface Animal { id: string; emoji: string; colorPrimary?: string; colorSecond
 interface Player { id: string; name: string; animalId: string; position: number; ecoScore?: number; }
 export interface HazardEvent { type: string; tileIndex: number; playerId?: string; }
 export interface BonusEvent { tileIndex: number; playerId?: string; }
-interface GameBoardProps { players: Player[]; animals?: Animal[]; highlightPlayerId?: string; hazardEvent?: HazardEvent | null; bonusEvent?: BonusEvent | null; }
+interface GameBoardProps { players: Player[]; animals?: Animal[]; highlightPlayerId?: string; hazardEvent?: HazardEvent | null; bonusEvent?: BonusEvent | null; ecosystemHealth?: number; }
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; size: number; rotation: number; rotSpeed: number; shape: "leaf" | "circle" | "spark"; }
 interface OverlayState { tileIndex: number; type: "hazard" | "bonus"; startT: number; duration: number; }
 interface PlayerAnimState { currentTile: number; targetTile: number; moveQueue: number[]; moveLerp: number; bounceTimer: number; movingForward: boolean; stepTimer: number; trailX: number; trailY: number; }
@@ -826,8 +826,104 @@ function drawPredatorCutscene(
   }
 }
 
+// ── Ecosystem Health Meter ────────────────────────────────────────────────────
+function drawEcosystemMeter(ctx: CanvasRenderingContext2D, health: number, W: number, H: number, t: number) {
+  const mW = Math.max(26, W * 0.025);
+  const mH = H * 0.52;
+  const mx = 14;
+  const my = H * 0.24;
+  const br = mW / 2;
+
+  // Panel
+  ctx.save();
+  ctx.shadowColor = health > 60 ? '#16a34a' : health > 30 ? '#f59e0b' : '#ef4444';
+  ctx.shadowBlur = 10; ctx.globalAlpha = 0.9;
+  ctx.fillStyle = 'rgba(4,10,4,0.93)';
+  ctx.beginPath(); ctx.roundRect(mx - 5, my - 38, mW + 10, mH + 56, br + 5); ctx.fill();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = health > 60 ? '#4ade80' : health > 30 ? '#f59e0b' : '#ef4444';
+  ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.restore();
+
+  // Globe emoji label
+  const labelFs = Math.max(8, mW * 0.55);
+  ctx.save();
+  ctx.font = `${labelFs}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🌍', mx + mW / 2, my - 24);
+  ctx.restore();
+
+  // Bar track
+  ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.beginPath(); ctx.roundRect(mx, my, mW, mH, br); ctx.fill(); ctx.restore();
+
+  // Fill gradient
+  const fillH = mH * Math.max(0, Math.min(1, health / 100));
+  const fillY = my + mH - fillH;
+  if (fillH > 1) {
+    const g = ctx.createLinearGradient(0, my + mH, 0, my);
+    g.addColorStop(0, '#7f1d1d'); g.addColorStop(0.25, '#ef4444');
+    g.addColorStop(0.5, '#f59e0b'); g.addColorStop(0.75, '#16a34a'); g.addColorStop(1, '#4ade80');
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(mx, my, mW, mH, br); ctx.clip();
+    ctx.fillStyle = g; ctx.fillRect(mx, fillY, mW, fillH);
+    ctx.restore();
+
+    // Glow dot at fill level
+    const gc = health > 60 ? '#86efac' : health > 30 ? '#fde68a' : '#fca5a5';
+    ctx.save();
+    ctx.globalAlpha = 0.8 + 0.18 * Math.sin(t * 2.8);
+    ctx.shadowColor = gc; ctx.shadowBlur = 14;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(mx + mW / 2, fillY + 2, Math.max(3, mW * 0.27), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Tick marks
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 1;
+  for (let ti = 1; ti < 4; ti++) {
+    const ty2 = my + mH * (1 - ti * 0.25);
+    ctx.beginPath(); ctx.moveTo(mx + 3, ty2); ctx.lineTo(mx + mW - 3, ty2); ctx.stroke();
+  }
+  ctx.restore();
+
+  // % label
+  ctx.save();
+  const pctFs = Math.max(7, mW * 0.32);
+  ctx.font = `bold ${pctFs}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const pc = health > 60 ? '#4ade80' : health > 30 ? '#f59e0b' : '#ef4444';
+  ctx.fillStyle = pc; ctx.shadowColor = pc; ctx.shadowBlur = 6;
+  ctx.fillText(`${Math.round(health)}%`, mx + mW / 2, my + mH + 20);
+  ctx.restore();
+
+  // Ascending sparkles when healthy
+  if (health > 68) {
+    for (let si = 0; si < 4; si++) {
+      const sp = ((t * 0.65 + si * 0.25) % 1);
+      const sx = mx + mW / 2 + Math.sin(t * 1.5 + si * 2.2) * mW * 0.95;
+      const sy = my - 8 - sp * 30;
+      ctx.save();
+      ctx.globalAlpha = sp < 0.5 ? sp * 2 * 0.8 : (1 - sp) * 2 * 0.8;
+      ctx.fillStyle = '#86efac'; ctx.shadowColor = '#4ade80'; ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.arc(sx, sy, Math.max(1.5, mW * 0.1), 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Pulsing danger border
+  if (health < 25) {
+    ctx.save();
+    ctx.globalAlpha = 0.42 + 0.42 * Math.abs(Math.sin(t * 3.5));
+    ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+    ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.roundRect(mx - 3, my - 3, mW + 6, mH + 6, br + 3); ctx.stroke();
+    ctx.restore();
+  }
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
-export function GameBoard({ players, animals = [], highlightPlayerId, hazardEvent, bonusEvent }: GameBoardProps) {
+export function GameBoard({ players, animals = [], highlightPlayerId, hazardEvent, bonusEvent, ecosystemHealth }: GameBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
@@ -839,10 +935,13 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
   const animState = useRef<Map<string, PlayerAnimState>>(new Map());
   const cameraRef = useRef<CameraState>({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tz: 1, returnTimer: 0, initialized: false, followingPlayer: false });
   const predatorRef = useRef<PredatorCutscene | null>(null);
+  const ecoHealthRef = useRef<number>(30);
+  const displayHealthRef = useRef<number>(30);
 
   useEffect(() => { playersRef.current = players; }, [players]);
   useEffect(() => { animalsRef.current = animals; }, [animals]);
   useEffect(() => { highlightRef.current = highlightPlayerId; }, [highlightPlayerId]);
+  useEffect(() => { ecoHealthRef.current = ecosystemHealth ?? 30; }, [ecosystemHealth]);
 
   useEffect(() => {
     if (!hazardEvent) return;
@@ -928,12 +1027,31 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
       // zone 3: displayRows 6-7 (Ocean)
       // zone 4: displayRows 8-9 (Forest) — canvas bottom
 
+      // Smooth-animate ecosystem health display value
+      displayHealthRef.current += (ecoHealthRef.current - displayHealthRef.current) * Math.min(1, dt * 1.8);
+      const dHealth = displayHealthRef.current;
+
       const zH = 2 * tH; // height of each zone
       renderRestoration(ctx, 0, PAD + 0 * tH, W, zH, t);
       renderHumanImpact(ctx, 0, PAD + 2 * tH, W, zH, t);
       renderDesert(ctx, 0, PAD + 4 * tH, W, zH, t);
       renderOcean(ctx, 0, PAD + 6 * tH, W, zH, t);
       renderForest(ctx, 0, PAD + 8 * tH, W, zH, t);
+
+      // ── Ecosystem health board overlay ─────────────────────────────────────
+      if (dHealth < 40) {
+        // Pollution haze — brownish smog tint across whole board
+        const pollA = ((40 - dHealth) / 40) * 0.24;
+        ctx.save(); ctx.globalAlpha = pollA; ctx.fillStyle = '#6b4c2a'; ctx.fillRect(0, 0, W, H); ctx.restore();
+      }
+      if (dHealth > 65) {
+        // Vitality glow — green warmth on forest and restoration zones
+        const vitalA = ((dHealth - 65) / 35) * 0.14;
+        ctx.save(); ctx.globalAlpha = vitalA;
+        ctx.fillStyle = '#16a34a'; ctx.fillRect(0, PAD + 8 * tH, W, zH);
+        ctx.fillStyle = '#4ade80'; ctx.fillRect(0, PAD, W, zH);
+        ctx.restore();
+      }
 
       // ── Zone name labels (subtle, large) ──────────────────────────────────
       const zoneNames = ["RESTORATION", "HUMAN IMPACT", "DESERT", "OCEAN", "FOREST"];
@@ -954,7 +1072,8 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
       drawWaypoints(ctx, centers, tW, tH, t);
 
       // ── Particles ──────────────────────────────────────────────────────────
-      if (Math.random() < 0.28 && particlesRef.current.length < 90) {
+      const healthSpawnMult = 0.4 + (dHealth / 100) * 1.6;
+      if (Math.random() < 0.28 * healthSpawnMult && particlesRef.current.length < 90) {
         const zone = Math.floor(Math.random() * 5);
         const tileI = zone * 20 + Math.floor(Math.random() * 20);
         const c2 = centers[Math.min(tileI, TILES - 1)];
@@ -1215,6 +1334,9 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
       animState.current.forEach((_, id) => { if (!currentPlayers.find(p => p.id === id)) animState.current.delete(id); });
 
       ctx.restore(); // restore camera transform
+
+      // ── Ecosystem health meter (screen-space, always visible) ────────────────
+      drawEcosystemMeter(ctx, dHealth, W, H, t);
 
       // ── Predator cutscene (screen-space, drawn over everything) ──────────────
       const predScene = predatorRef.current;

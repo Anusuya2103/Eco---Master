@@ -46,6 +46,7 @@ export default function HostView() {
   } | null>(null);
   const [hazardEvent, setHazardEvent] = useState<HazardEvent | null>(null);
   const [bonusEvent, setBonusEvent] = useState<BonusEvent | null>(null);
+  const [ecosystemHealth, setEcosystemHealth] = useState<number>(30);
 
   useEffect(() => {
     if (!socket) return;
@@ -69,6 +70,7 @@ export default function HostView() {
     socket.on("game_started", (data: { players: Player[] }) => {
       setGameState("playing");
       setPlayers(data.players);
+      setEcosystemHealth(30);
     });
 
     socket.on("question", (data: { text: string; options: string[]; zone: string; round: number; totalRounds: number; timeLimit: number }) => {
@@ -97,6 +99,12 @@ export default function HostView() {
           return lr ? { ...p, position: lr.position, ecoScore: lr.ecoScore } : p;
         })
       );
+      // Adjust ecosystem health: +4 per forward mover (correct), -2 per stationary/backward (wrong)
+      if (data.playerResults && data.playerResults.length > 0) {
+        const correctCount = data.playerResults.filter((r: any) => (r.moved ?? 0) > 0).length;
+        const wrongCount = data.playerResults.length - correctCount;
+        setEcosystemHealth(prev => Math.max(0, Math.min(100, prev + correctCount * 4 - wrongCount * 2)));
+      }
     });
 
     socket.on("positions_updated", (data: { players: Player[] }) => {
@@ -109,11 +117,13 @@ export default function HostView() {
 
     socket.on("hazard_event", (data: { playerId: string; tileIndex: number; type?: string; penalty?: number }) => {
       setHazardEvent({ type: data.type || "hazard", tileIndex: data.tileIndex, playerId: data.playerId });
+      setEcosystemHealth(prev => Math.max(0, prev - 8));
       setTimeout(() => setHazardEvent(null), 3000);
     });
 
     socket.on("bonus_event", (data: { playerId: string; tileIndex: number; bonus?: number }) => {
       setBonusEvent({ tileIndex: data.tileIndex, playerId: data.playerId });
+      setEcosystemHealth(prev => Math.min(100, prev + 6));
       setTimeout(() => setBonusEvent(null), 2500);
     });
 
@@ -166,7 +176,7 @@ export default function HostView() {
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-background overflow-hidden">
       <div className="flex-1 relative">
-        <GameBoard players={players} animals={animals} hazardEvent={hazardEvent} bonusEvent={bonusEvent} />
+        <GameBoard players={players} animals={animals} hazardEvent={hazardEvent} bonusEvent={bonusEvent} ecosystemHealth={ecosystemHealth} />
 
         {currentQuestion && (
           <div className="absolute bottom-4 left-4 right-4 bg-card/95 backdrop-blur border rounded-xl p-4 shadow-2xl">
