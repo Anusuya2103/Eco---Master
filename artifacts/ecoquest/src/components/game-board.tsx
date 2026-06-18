@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { drawAnimalPortrait, drawLightningBolt, drawStar } from "../lib/animal-draw";
+import { drawAnimalPortrait, drawLightningBolt, drawStar, getBodyPlan } from "../lib/animal-draw";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Animal { id: string; emoji: string; colorPrimary?: string; colorSecondary?: string; }
@@ -9,8 +9,8 @@ export interface BonusEvent { tileIndex: number; playerId?: string; }
 interface GameBoardProps { players: Player[]; animals?: Animal[]; highlightPlayerId?: string; hazardEvent?: HazardEvent | null; bonusEvent?: BonusEvent | null; }
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; size: number; rotation: number; rotSpeed: number; shape: "leaf" | "circle" | "spark"; }
 interface OverlayState { tileIndex: number; type: "hazard" | "bonus"; startT: number; duration: number; }
-interface PlayerAnimState { currentTile: number; targetTile: number; moveQueue: number[]; moveLerp: number; bounceTimer: number; }
-interface CameraState { cx: number; cy: number; zoom: number; tcx: number; tcy: number; tz: number; returnTimer: number; initialized: boolean; }
+interface PlayerAnimState { currentTile: number; targetTile: number; moveQueue: number[]; moveLerp: number; bounceTimer: number; movingForward: boolean; stepTimer: number; trailX: number; trailY: number; }
+interface CameraState { cx: number; cy: number; zoom: number; tcx: number; tcy: number; tz: number; returnTimer: number; initialized: boolean; followingPlayer: boolean; }
 
 // ── Board constants ───────────────────────────────────────────────────────────
 const COLS = 10;
@@ -598,7 +598,7 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
   const overlayRef = useRef<OverlayState | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const animState = useRef<Map<string, PlayerAnimState>>(new Map());
-  const cameraRef = useRef<CameraState>({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tz: 1, returnTimer: 0, initialized: false });
+  const cameraRef = useRef<CameraState>({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tz: 1, returnTimer: 0, initialized: false, followingPlayer: false });
 
   useEffect(() => { playersRef.current = players; }, [players]);
   useEffect(() => { animalsRef.current = animals; }, [animals]);
@@ -734,26 +734,75 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
       // ── Players ────────────────────────────────────────────────────────────
       const currentPlayers = playersRef.current;
       const currentAnimals = animalsRef.current;
-      const MOVE_SPEED = 4.5;
+
+      // Per-body-plan movement speeds (tiles/sec) and arc heights (fraction of tH)
+      function getMoveProfile(animalId: string): { speed: number; arcH: number } {
+        const plan = getBodyPlan(animalId);
+        switch (plan) {
+          case 'bird':    return { speed: 7.0, arcH: 1.2 };
+          case 'rabbit':  return { speed: 5.5, arcH: 0.9 };
+          case 'feline':  return { speed: 6.0, arcH: 0.7 };
+          case 'canine':  return { speed: 5.5, arcH: 0.6 };
+          case 'snake':   return { speed: 4.0, arcH: 0.05 };
+          case 'turtle':  return { speed: 2.5, arcH: 0.25 };
+          case 'aquatic': return { speed: 5.0, arcH: 0.35 };
+          case 'insect':  return { speed: 6.5, arcH: 1.0 };
+          default:        return { speed: 4.5, arcH: 0.55 };
+        }
+      }
 
       const renderTileOf = new Map<string, number>();
+      let anyMoving = false;
+      let movingCamX = 0, movingCamY = 0, movingCount = 0;
+
       currentPlayers.forEach(p => {
         const tile = Math.max(0, Math.min(p.position, TILES - 1));
         let st = animState.current.get(p.id);
-        if (!st) { st = { currentTile: tile, targetTile: tile, moveQueue: [], moveLerp: 0, bounceTimer: 0 }; animState.current.set(p.id, st); }
+        if (!st) {
+          const c0 = centers[tile];
+          st = { currentTile: tile, targetTile: tile, moveQueue: [], moveLerp: 0, bounceTimer: 0, movingForward: true, stepTimer: 0, trailX: c0.x, trailY: c0.y };
+          animState.current.set(p.id, st);
+        }
         if (st.moveQueue.length === 0 && st.targetTile !== tile) {
           const from = st.currentTile, mq: number[] = [];
-          if (from < tile) for (let i = from + 1; i <= tile; i++) mq.push(Math.min(i, TILES - 1));
+          const forward = tile > from;
+          st.movingForward = forward;
+          if (forward) for (let i = from + 1; i <= tile; i++) mq.push(Math.min(i, TILES - 1));
           else for (let i = from - 1; i >= tile; i--) mq.push(Math.max(i, 0));
           st.moveQueue = mq; st.targetTile = tile; st.moveLerp = 0;
         }
+        const { speed } = getMoveProfile(p.animalId);
         if (st.moveQueue.length > 0) {
-          st.moveLerp += dt * MOVE_SPEED;
-          while (st.moveLerp >= 1 && st.moveQueue.length > 0) { st.moveLerp -= 1; st.currentTile = st.moveQueue.shift()!; }
-          if (st.moveQueue.length === 0) { st.bounceTimer = 0.4; st.moveLerp = 0; }
+          st.moveLerp += dt * speed;
+          st.stepTimer -= dt;
+          while (st.moveLerp >= 1 && st.moveQueue.length > 0) {
+            st.moveLerp -= 1;
+            st.currentTile = st.moveQueue.shift()!;
+            st.stepTimer = 0.08; // spawn trail burst on each step
+          }
+          if (st.moveQueue.length === 0) { st.bounceTimer = 0.45; st.moveLerp = 0; }
+          anyMoving = true;
+          // Accumulate camera target toward the moving player's interpolated pos
+          const fc = centers[Math.max(0, Math.min(TILES - 1, st.currentTile))];
+          movingCamX += fc.x; movingCamY += fc.y; movingCount++;
         }
         renderTileOf.set(p.id, st.currentTile);
       });
+
+      // Camera: follow moving players at moderate zoom; return to full board when idle
+      if (!overlayRef.current) {
+        if (anyMoving && movingCount > 0) {
+          cam.tcx = movingCamX / movingCount;
+          cam.tcy = movingCamY / movingCount;
+          cam.tz = movingCount === 1 ? 2.0 : 1.5;
+          cam.followingPlayer = true;
+          cam.returnTimer = 0;
+        } else if (cam.followingPlayer) {
+          cam.followingPlayer = false;
+          cam.tcx = BOARD_CX; cam.tcy = BOARD_CY; cam.tz = 1;
+          cam.returnTimer = 0;
+        }
+      }
 
       const byTile = new Map<number, string[]>();
       currentPlayers.forEach(p => { const rt = renderTileOf.get(p.id) ?? 0; if (!byTile.has(rt)) byTile.set(rt, []); byTile.get(rt)!.push(p.id); });
@@ -765,61 +814,152 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
         let ox = 0, oy = 0;
         if (group.length > 1) { const a = (myIdx / group.length) * Math.PI * 2 - Math.PI / 2; const rad = tW * 0.22; ox = Math.cos(a) * rad; oy = Math.sin(a) * rad; }
 
+        const animal = currentAnimals.find(a => a.id === p.animalId);
+        const primaryColor = animal?.colorPrimary || "#16a34a";
+        const { arcH } = getMoveProfile(p.animalId);
+        const isMoving = st.moveQueue.length > 0;
+
         let px: number, py: number;
-        if (st.moveQueue.length > 0) {
+        let arcOffset = 0;
+        let scaleX = 1, scaleY = 1;
+        let tiltAngle = 0;
+
+        if (isMoving) {
           const fc2 = centers[Math.max(0, Math.min(TILES - 1, st.currentTile))];
           const tc = centers[Math.max(0, Math.min(TILES - 1, st.moveQueue[0]))];
           const prog = eio(Math.min(1, st.moveLerp));
-          px = fc2.x + (tc.x - fc2.x) * prog + ox; py = fc2.y + (tc.y - fc2.y) * prog + oy;
+          const rawProg = Math.min(1, st.moveLerp);
+          px = fc2.x + (tc.x - fc2.x) * prog + ox;
+          py = fc2.y + (tc.y - fc2.y) * prog + oy;
+
+          // Parabolic hop arc — peak at midpoint
+          arcOffset = -Math.sin(rawProg * Math.PI) * tH * arcH;
+
+          // Squash & stretch: stretch vertically at peak (rawProg≈0.5), squash on takeoff/land
+          const stretchPhase = Math.sin(rawProg * Math.PI);
+          scaleY = 1 + stretchPhase * 0.28;
+          scaleX = 1 - stretchPhase * 0.12;
+
+          // Tilt in direction of movement
+          const dx = tc.x - fc2.x, dy = (tc.y - fc2.y);
+          tiltAngle = Math.atan2(dy, dx) * 0.22;
+
+          // Trail: spawn dust particle at previous position periodically
+          if (st.stepTimer <= 0 && particlesRef.current.length < 120) {
+            const trailColors = ["rgba(255,255,255,0.6)", primaryColor + "99", "#fde68a88"];
+            for (let ti = 0; ti < 3; ti++) {
+              particlesRef.current.push({
+                x: st.trailX + (Math.random() - 0.5) * tW * 0.3,
+                y: st.trailY + (Math.random() - 0.5) * tH * 0.3,
+                vx: (Math.random() - 0.5) * tW * 0.6,
+                vy: -(Math.random() * tH * 0.8 + tH * 0.2),
+                life: 0.35 + Math.random() * 0.2,
+                maxLife: 0.55,
+                color: trailColors[ti % 3],
+                size: Math.max(2, tW * 0.04) * (0.5 + Math.random() * 0.5),
+                rotation: Math.random() * Math.PI * 2,
+                rotSpeed: (Math.random() - 0.5) * 8,
+                shape: "circle",
+              });
+            }
+          }
+          st.trailX = px; st.trailY = py;
         } else {
           const c2 = centers[Math.max(0, Math.min(TILES - 1, st.currentTile))];
           px = c2.x + ox; py = c2.y + oy;
+          st.trailX = px; st.trailY = py;
         }
 
-        // Idle animations
-        const floatY = Math.sin(t * 1.4 + pIdx * 1.1) * tH * 0.03;
-        const breathScale = 1 + 0.018 * Math.sin(t * 1.4 + pIdx * 2.1);
+        // Idle animations (suppressed while moving fast)
+        const idleFactor = isMoving ? 0 : 1;
+        const floatY = Math.sin(t * 1.4 + pIdx * 1.1) * tH * 0.03 * idleFactor;
+        const breathScale = 1 + 0.018 * Math.sin(t * 1.4 + pIdx * 2.1) * idleFactor;
+
+        // Landing bounce
         let bounceScale = 1;
-        if (st.bounceTimer > 0) { st.bounceTimer = Math.max(0, st.bounceTimer - dt); bounceScale = 1 + 0.35 * Math.sin((1 - st.bounceTimer / 0.4) * Math.PI); }
+        if (st.bounceTimer > 0) {
+          st.bounceTimer = Math.max(0, st.bounceTimer - dt);
+          const bProg = 1 - st.bounceTimer / 0.45;
+          // squash on land, then spring back
+          bounceScale = bProg < 0.3
+            ? 1 - 0.3 * (bProg / 0.3)               // squash
+            : 1 + 0.2 * Math.sin((bProg - 0.3) / 0.7 * Math.PI); // spring
+          scaleX = 1 + (1 / bounceScale - 1) * 0.6; // counter-squash horizontally
+        }
 
-        const finalScale = breathScale * bounceScale;
-        // Avatar radius: 65% of tileHeight — gives 64-96px on typical screens
-        const tokenR = tH * 0.65 * finalScale;
-        const finalPy = py + floatY;
+        const finalScaleX = scaleX * breathScale * (isMoving ? 1 : bounceScale);
+        const finalScaleY = scaleY * breathScale * bounceScale;
+        const tokenR = tH * 0.65;
+        const finalPy = py + floatY + arcOffset;
         const isHL = highlightRef.current === p.id;
-        const animal = currentAnimals.find(a => a.id === p.animalId);
-        const primaryColor = animal?.colorPrimary || "#16a34a";
 
-        // Drop shadow
-        ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 14;
-        ctx.beginPath(); ctx.arc(px, finalPy, tokenR, 0, Math.PI * 2);
-        const tg = ctx.createRadialGradient(px - tokenR * 0.3, finalPy - tokenR * 0.3, 0, px, finalPy, tokenR);
-        tg.addColorStop(0, primaryColor + "ff"); tg.addColorStop(1, primaryColor + "aa");
-        ctx.fillStyle = tg; ctx.fill();
-        ctx.strokeStyle = isHL ? "#fbbf24" : "rgba(255,255,255,0.8)"; ctx.lineWidth = isHL ? Math.max(3, tH * 0.04) : Math.max(2, tH * 0.02); ctx.stroke();
+        // Ground shadow (grows/shrinks with arc height)
+        const shadowAlpha = isMoving ? 0.15 + 0.25 * (1 - Math.abs(arcOffset) / (tH * arcH + 0.001)) : 0.35;
+        ctx.save();
+        ctx.globalAlpha = shadowAlpha;
+        ctx.fillStyle = "rgba(0,0,0,0.8)";
+        ctx.beginPath();
+        ctx.ellipse(px, py + tokenR * 0.3, tokenR * finalScaleX * 0.8, tokenR * 0.22, 0, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
 
+        // Draw token with squash/stretch transform
+        ctx.save();
+        ctx.translate(px, finalPy);
+        if (tiltAngle !== 0) ctx.rotate(tiltAngle);
+        ctx.scale(finalScaleX, finalScaleY);
+        ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 14;
+
+        ctx.beginPath(); ctx.arc(0, 0, tokenR, 0, Math.PI * 2);
+        const tg = ctx.createRadialGradient(-tokenR * 0.3, -tokenR * 0.3, 0, 0, 0, tokenR);
+        tg.addColorStop(0, primaryColor + "ff"); tg.addColorStop(1, primaryColor + "aa");
+        ctx.fillStyle = tg; ctx.fill();
+        ctx.strokeStyle = isHL ? "#fbbf24" : "rgba(255,255,255,0.8)";
+        ctx.lineWidth = isHL ? Math.max(3, tH * 0.04) : Math.max(2, tH * 0.02);
+        ctx.stroke();
+
         if (isHL) {
-          ctx.save(); ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 24;
+          ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 24;
           ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = Math.max(2, tH * 0.025);
-          ctx.beginPath(); ctx.arc(px, finalPy, tokenR * 1.12, 0, Math.PI * 2); ctx.stroke();
-          ctx.restore();
+          ctx.beginPath(); ctx.arc(0, 0, tokenR * 1.12, 0, Math.PI * 2); ctx.stroke();
         }
 
+        ctx.restore();
+
+        // Draw portrait (no squash/stretch on the face — just position/arc)
         drawAnimalPortrait(ctx, p.animalId, animal?.colorPrimary, animal?.colorSecondary, px, finalPy, tokenR * 0.95);
+
+        // Speed lines during fast movement (birds / felines)
+        if (isMoving && arcH > 0.6) {
+          const plan = getBodyPlan(p.animalId);
+          if (plan === 'bird' || plan === 'feline' || plan === 'insect') {
+            ctx.save(); ctx.globalAlpha = 0.25;
+            ctx.strokeStyle = primaryColor;
+            ctx.lineWidth = Math.max(1, tH * 0.015);
+            for (let li = 0; li < 4; li++) {
+              const lox = (Math.random() - 0.5) * tokenR * 1.8;
+              const loy = (Math.random() - 0.5) * tokenR * 1.2;
+              const len = tokenR * (0.4 + Math.random() * 0.6);
+              const dirX = st.movingForward ? -1 : 1;
+              ctx.beginPath();
+              ctx.moveTo(px + lox, finalPy + loy);
+              ctx.lineTo(px + lox + dirX * len, finalPy + loy);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+        }
 
         // Name label — large and readable for projector
         const nameFontSize = Math.max(10, tH * 0.22);
+        const namePy = py + tokenR * finalScaleY + floatY + arcOffset + tH * 0.03;
         ctx.save(); ctx.font = `bold ${nameFontSize}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "top";
         const nw = ctx.measureText(p.name).width;
         const nPad = nameFontSize * 0.35;
-        const nameY = finalPy + tokenR + tH * 0.03;
-        // Pill background
         ctx.fillStyle = "rgba(0,0,0,0.72)";
-        ctx.beginPath(); ctx.roundRect(px - nw / 2 - nPad, nameY - nPad * 0.5, nw + nPad * 2, nameFontSize + nPad, nameFontSize * 0.4); ctx.fill();
-        // Colored top accent
+        ctx.beginPath(); ctx.roundRect(px - nw / 2 - nPad, namePy - nPad * 0.5, nw + nPad * 2, nameFontSize + nPad, nameFontSize * 0.4); ctx.fill();
         ctx.fillStyle = isHL ? "#fde68a" : primaryColor;
-        ctx.fillText(p.name, px, nameY);
+        ctx.fillText(p.name, px, namePy);
         ctx.restore();
       });
 
