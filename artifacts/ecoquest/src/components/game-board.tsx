@@ -497,8 +497,18 @@ function drawWaypoints(ctx: CanvasRenderingContext2D, centers: { x: number; y: n
       if (!isMilestone) drawStar(ctx, c.x, c.y, aR * 0.7, "#fde68a");
     }
 
-    // Milestone markers (only at 10, 20, 30 ... 100 + start)
-    if (!isMilestone) continue;
+    // Small tile number on every non-milestone tile
+    if (!isMilestone) {
+      const numSize = Math.max(7, Math.min(tW, tH) * 0.28);
+      ctx.save();
+      ctx.font = `bold ${numSize}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillText(String(i + 1), c.x, c.y);
+      ctx.restore();
+      continue;
+    }
 
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
 
@@ -1257,7 +1267,7 @@ export function GameBoard({ players, animals = [], highlightPlayerId, hazardEven
 
         const finalScaleX = scaleX * breathScale * (isMoving ? 1 : bounceScale);
         const finalScaleY = scaleY * breathScale * bounceScale;
-        const tokenR = tH * 0.65;
+        const tokenR = tH * 0.40;
         const finalPy = py + floatY + arcOffset;
         const isHL = highlightRef.current === p.id;
 
