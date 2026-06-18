@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { drawAnimalPortrait, drawLightningBolt, drawStar, getBodyPlan } from "../lib/animal-draw";
+import { drawAnimalPortrait, getBodyPlan } from "../lib/animal-draw";
+import { drawEnvObject } from "../lib/env-objects";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Animal { id: string; emoji: string; colorPrimary?: string; colorSecondary?: string; }
@@ -467,8 +468,7 @@ function drawNaturePath(ctx: CanvasRenderingContext2D, centers: { x: number; y: 
 
 // ── Waypoints (milestones + hazard/bonus auras) ───────────────────────────────
 function drawWaypoints(ctx: CanvasRenderingContext2D, centers: { x: number; y: number }[], tW: number, tH: number, t: number) {
-  const mR = Math.min(tW, tH) * 0.26; // milestone circle radius — large and visible
-  const aR = Math.min(tW, tH) * 0.18; // aura for hazard/bonus
+  const mR = Math.min(tW, tH) * 0.26;
   const zoneAcc = ["#22c55e", "#3b82f6", "#f59e0b", "#9ca3af", "#4ade80"];
   const fontSize = Math.max(10, mR * 0.72);
 
@@ -478,38 +478,54 @@ function drawWaypoints(ctx: CanvasRenderingContext2D, centers: { x: number; y: n
     const isMilestone = MILESTONES.has(i) || isStart || isFinish;
     const hz = isHazard(i), bn = isBonus(i);
 
-    // Hazard/bonus aura (always visible, no label)
-    if (hz) {
-      const pulse = 1 + 0.1 * Math.sin(t * 2.8 + i);
-      ctx.save(); ctx.shadowColor = "#ef4444"; ctx.shadowBlur = 12;
-      ctx.strokeStyle = "#ef4444"; ctx.lineWidth = Math.max(2, tH * 0.025);
-      ctx.globalAlpha = 0.7 + 0.15 * Math.sin(t * 2.5 + i);
-      ctx.beginPath(); ctx.arc(c.x, c.y, aR * pulse, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
-      if (!isMilestone) drawLightningBolt(ctx, c.x, c.y, aR * 0.7, "#fca5a5");
-    } else if (bn) {
-      const pulse = 1 + 0.08 * Math.sin(t * 2.2 + i);
-      ctx.save(); ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 12;
-      ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = Math.max(2, tH * 0.025);
-      ctx.globalAlpha = 0.7 + 0.15 * Math.sin(t * 2 + i);
-      ctx.beginPath(); ctx.arc(c.x, c.y, aR * pulse, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
-      if (!isMilestone) drawStar(ctx, c.x, c.y, aR * 0.7, "#fde68a");
+    // ── Environmental objects replace ALL hazard/bonus markers ──────────────
+    if (hz || bn) {
+      drawEnvObject(ctx, c.x, c.y, tW, tH, i, hz, t);
+
+      // For milestone tiles that are ALSO hazard/bonus, draw the tile number
+      // in a small pill so players still know position
+      if (isMilestone && !isStart && !isFinish) {
+        const numSize = Math.max(7, Math.min(tW, tH) * 0.22);
+        ctx.save();
+        ctx.font = `bold ${numSize}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const tw2 = ctx.measureText(String(i + 1)).width;
+        const pad = numSize * 0.32;
+        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        ctx.beginPath();
+        (ctx as any).roundRect(c.x - tw2 / 2 - pad, c.y - mR * 1.58 - numSize * 0.6, tw2 + pad * 2, numSize + pad * 0.6, numSize * 0.3);
+        ctx.fill();
+        ctx.fillStyle = hz ? "#fca5a5" : "#fde68a";
+        ctx.fillText(String(i + 1), c.x, c.y - mR * 1.58);
+        ctx.restore();
+      }
+      // For non-milestone hazard/bonus: show tiny dimmed tile number
+      if (!isMilestone) {
+        const numSize = Math.max(6, Math.min(tW, tH) * 0.2);
+        ctx.save();
+        ctx.font = `bold ${numSize}px sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillStyle = "rgba(255,255,255,0.38)";
+        ctx.fillText(String(i + 1), c.x, c.y + Math.min(tW, tH) * 0.46);
+        ctx.restore();
+      }
+      continue;
     }
 
-    // Small tile number on every non-milestone tile
+    // ── Small tile number on non-milestone, non-hazard/bonus tiles ──────────
     if (!isMilestone) {
       const numSize = Math.max(7, Math.min(tW, tH) * 0.28);
       ctx.save();
       ctx.font = `bold ${numSize}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.fillText(String(i + 1), c.x, c.y);
       ctx.restore();
       continue;
     }
 
+    // ── Milestone markers (10, 20, ... 100 + START) ─────────────────────────
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
 
     if (isStart) {
@@ -525,14 +541,12 @@ function drawWaypoints(ctx: CanvasRenderingContext2D, centers: { x: number; y: n
       ctx.font = `${fontSize * 0.6}px sans-serif`; ctx.fillText("FINISH", c.x, c.y + fontSize * 0.52);
     } else {
       const zi = Math.min(4, Math.floor(i / 20));
-      const acc = hz ? "#ef4444" : bn ? "#fbbf24" : zoneAcc[zi];
+      const acc = zoneAcc[zi];
       ctx.save(); ctx.shadowColor = acc; ctx.shadowBlur = 14;
       ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.beginPath(); ctx.arc(c.x, c.y, mR, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = acc; ctx.lineWidth = Math.max(2, tH * 0.02); ctx.stroke(); ctx.restore();
       ctx.fillStyle = acc; ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.fillText(String(i + 1), c.x, c.y);
-      if (hz) drawLightningBolt(ctx, c.x, c.y, mR * 0.65, "#fca5a5");
-      else if (bn) drawStar(ctx, c.x, c.y, mR * 0.65, "#fde68a");
     }
   }
 }
