@@ -1,0 +1,37 @@
+The "EcoQuest Master" Replit Agent Prompt
+System Objective: Build "EcoQuest," a real-time, large-scale (100+ player) multiplayer eco-survival board game using a Node.js/Express backend, Socket.IO for real-time sync, and HTML5 Canvas (or Phaser.js) for the frontend
+.
+Constraint - Zero External Assets: You cannot download or use external image/audio files.
+Visuals: Generate 50 unique animal avatars using procedural SVG paths or Canvas drawing functions (e.g., ctx.arc, ctx.lineTo).
+Audio: Use the Web Audio API to synthesize relaxing nature soundscapes (wind, bird chirps, waves) and action SFX (dings for correct answers, low sawtooth waves for hazards) entirely through code.
+1. Architecture & Game Loop:
+Synchronized Rounds: Instead of turns, all players receive the same MCQ from a bank of 100–300 environmental questions simultaneously
+.
+Timer: Implement a global 10–15 second countdown per round
+.
+Simultaneous Processing: After the timer, evaluate all answers. Correct answers move players forward (2–6 steps based on animal type); wrong answers result in a penalty or no move
+.
+2. The 100-Tile Animated Board:
+Divide the board into 5 zones: Forest, Ocean, Desert, Human Impact, and Restoration
+.
+Clustering Logic: Use a "Fan-Out" algorithm (Polar Coordinates) to arrange player icons and floating name labels in a circle when multiple players occupy the same tile.
+Hazard/Bonus Tiles: Programmatically trigger "cutscene style" animations for predators (fox/wolf pounce) or pollution events, and growth animations for planting trees
+.
+3. Animal & Survival System:
+Implement a library of 50 animal species with unique survival traits [Conversation, 4, 5].
+Include groups like Forest Dwellers (fast but weak), Water Residents (slow but hazard-resistant), and Sky Specialists (hazard avoidance)
+.
+Species-Specific Movement: Code hopping/leaping animations for rabbits/deer and crawling transitions for turtles/crabs.
+4. View Differentiation:
+Host View (Laptop/Projector): Display the full animated board, all player positions with names, the live top-10 leaderboard, and START/STOP controls
+.
+Player View (Mobile): A minimalist interface showing only their chosen animal, personal position, current eco-score, the active question, and the timer
+.
+5. Backend & Data:
+Socket Events: join_room, start_game, send_question, process_round, update_positions, and stop_game
+.
+Data Structure: Track a Player object (id, name, animal, position, ecoScore) and a Game object (roomId, usedQuestions, state)
+.
+Win Logic: On "STOP," rank winners by: 1. Highest Eco Score, 2. Farthest Position, 3. Most Correct Answers
+.
+Initial Task: Start by setting up the Node.js server and a basic Socket.IO connection. Then, create the drawAnimal function using Canvas to prove the procedural asset generation works before building the full 100-tile board logic.

@@ -1,0 +1,237 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: EcoQuest API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: game
+    description: Game operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /animals:
+    get:
+      operationId: listAnimals
+      tags: [game]
+      summary: List all animal species
+      description: Returns all 50 playable animal species with their traits
+      responses:
+        "200":
+          description: List of animals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Animal"
+
+  /questions:
+    get:
+      operationId: listQuestions
+      tags: [game]
+      summary: Get questions
+      description: Returns environmental questions for the game
+      parameters:
+        - in: query
+          name: count
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of questions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Question"
+
+  /rooms:
+    post:
+      operationId: createRoom
+      tags: [game]
+      summary: Create a game room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomInput"
+      responses:
+        "201":
+          description: Created room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+
+  /rooms/{roomId}:
+    get:
+      operationId: getRoom
+      tags: [game]
+      summary: Get room info
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Room details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "404":
+          description: Room not found
+
+  /rooms/{roomId}/leaderboard:
+    get:
+      operationId: getRoomLeaderboard
+      tags: [game]
+      summary: Get final leaderboard for a room
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Final leaderboard rankings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+        "404":
+          description: Room not found
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Animal:
+      type: object
+      required: [id, name, group, moveRange, hazardResistance, specialAbility, emoji]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        group:
+          type: string
+          enum: [forest, water, sky, desert, grassland]
+        moveRange:
+          type: object
+          required: [min, max]
+          properties:
+            min:
+              type: integer
+            max:
+              type: integer
+        hazardResistance:
+          type: number
+        specialAbility:
+          type: string
+        emoji:
+          type: string
+        colorPrimary:
+          type: string
+        colorSecondary:
+          type: string
+
+    Question:
+      type: object
+      required: [id, text, options, correctIndex, zone, explanation]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        correctIndex:
+          type: integer
+        zone:
+          type: string
+          enum: [forest, ocean, desert, human_impact, restoration]
+        explanation:
+          type: string
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+
+    RoomInput:
+      type: object
+      required: [hostName]
+      properties:
+        hostName:
+          type: string
+
+    Room:
+      type: object
+      required: [id, code, hostName, state, playerCount, createdAt]
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        hostName:
+          type: string
+        state:
+          type: string
+          enum: [waiting, playing, finished]
+        playerCount:
+          type: integer
+        currentRound:
+          type: integer
+        createdAt:
+          type: string
+
+    LeaderboardEntry:
+      type: object
+      required: [rank, playerId, playerName, animalId, ecoScore, position, correctAnswers]
+      properties:
+        rank:
+          type: integer
+        playerId:
+          type: string
+        playerName:
+          type: string
+        animalId:
+          type: string
+        ecoScore:
+          type: integer
+        position:
+          type: integer
+        correctAnswers:
+          type: integer

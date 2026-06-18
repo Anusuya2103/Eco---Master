@@ -1,0 +1,482 @@
+PROJECT: ECO LEARNING BOARD GAME (100+ PLAYER MULTIPLAYER)
+
+IMPORTANT: THIS IS NOT A QUIZ APP WITH ICONS. THIS IS A REAL GAME.
+
+VISUAL DESIGN GOAL
+
+Create a polished educational multiplayer board game that feels like a professional 2D adventure game.
+
+Do NOT use:
+
+* Emojis
+* Unicode symbols
+* Animal emojis
+* Hazard emojis
+* Colored circles as players
+* Placeholder icons
+* Font Awesome icons for animals
+* Static symbols
+* Text representations of animals
+
+Every animal, hazard, and board object must be represented using actual sprite graphics and animations.
+
+=================================================================
+CHARACTER MOVEMENT SYSTEM
+=========================
+
+Animals must behave like real game characters.
+
+When a player moves:
+
+DO NOT:
+
+* Teleport the animal
+* Instantly jump to destination tile
+* Change only the position number
+
+INSTEAD:
+
+1. Start movement animation
+2. Move smoothly along the board path
+3. Travel tile by tile
+4. Arrive at destination
+5. Return to idle animation
+
+Examples:
+
+Tiger:
+
+* Runs between tiles
+* Tail and legs animated
+
+Rabbit:
+
+* Hops between tiles
+
+Turtle:
+
+* Slow walking animation
+
+Snake:
+
+* Slithering animation
+
+Eagle:
+
+* Wing flap animation
+* Glides between positions
+
+Dolphin:
+
+* Swimming animation
+* Water leap animation
+
+Animals should feel alive while standing still:
+
+* Blink
+* Tail movement
+* Breathing
+* Idle motions
+
+=================================================================
+ANIMAL SYSTEM
+=============
+
+Create support for 50 unique species.
+
+Each animal requires:
+
+Idle Animation
+Movement Animation
+Hazard Reaction Animation
+Victory Animation
+
+Required Asset Structure:
+
+animals/
+tiger/
+idle.png
+move.png
+hit.png
+win.png
+
+```
+rabbit/
+    idle.png
+    move.png
+    hit.png
+    win.png
+
+turtle/
+    idle.png
+    move.png
+    hit.png
+    win.png
+```
+
+etc.
+
+=================================================================
+BOARD DESIGN
+============
+
+Create a 100 tile journey.
+
+Zones:
+
+1. Forest Zone
+2. Water Zone
+3. Desert Zone
+4. Human Impact Zone
+5. Restoration Zone
+
+Board should be visually beautiful.
+
+Forest:
+
+* Trees
+* Grass
+* Flowers
+* Wildlife
+
+Water:
+
+* Rivers
+* Lakes
+* Water effects
+
+Desert:
+
+* Sand dunes
+* Rocks
+* Wind effects
+
+Human Impact:
+
+* Factories
+* Pollution
+* Deforestation
+* Waste
+
+Restoration:
+
+* Green forests
+* Healthy rivers
+* Wildlife recovery
+
+Board should feel like an adventure path.
+
+=================================================================
+HAZARD SYSTEM
+=============
+
+Hazards are not icons.
+
+Hazards are animated entities.
+
+Examples:
+
+Eagle Attack:
+
+* Eagle enters screen
+* Eagle flies toward target
+* Attack animation
+* Target reacts
+
+Wolf Attack:
+
+* Wolf runs toward target
+* Bite animation
+* Animal reaction
+
+Pollution:
+
+* Smoke spreads
+* Plastic drifts
+* Water darkens
+
+Poaching:
+
+* Trap appears
+* Warning animation
+* Capture effect
+
+Wildfire:
+
+* Fire spreads
+* Smoke rises
+* Emergency effect
+
+Each hazard must have:
+
+Entrance Animation
+Action Animation
+Exit Animation
+
+=================================================================
+CUTSCENE SYSTEM
+===============
+
+When hazards occur:
+
+Pause board movement.
+
+Play short cinematic sequence.
+
+Example:
+
+Rabbit lands on eagle tile.
+
+Sequence:
+
+Eagle appears.
+Eagle dives.
+Rabbit reacts.
+Penalty applied.
+Game resumes.
+
+Keep cutscenes short:
+2–4 seconds.
+
+=================================================================
+MULTIPLAYER DISPLAY
+===================
+
+Support 100+ players.
+
+When multiple players occupy same tile:
+
+Do NOT stack directly.
+
+Create cluster formation.
+
+Example:
+
+```
+  Player
+```
+
+Player   Player
+
+```
+   Tile
+```
+
+Player   Player
+
+Display:
+
+* Animal avatar
+* Player name
+* Eco score indicator
+
+Maintain readability.
+
+=================================================================
+HOST SCREEN
+===========
+
+Center:
+
+* Main animated board
+
+Left:
+
+* Live leaderboard
+
+Right:
+
+* Current question
+* Timer
+* Event feed
+
+Top:
+
+* Game controls
+
+Bottom:
+
+* Zone progress
+
+=================================================================
+MOBILE PLAYER SCREEN
+====================
+
+Show:
+
+Player Animal
+Eco Score
+Current Position
+Question
+Answer Choices
+Timer
+
+Simple and clean.
+
+=================================================================
+QUESTION SYSTEM
+===============
+
+100–300 questions minimum.
+
+Categories:
+
+Wildlife
+Climate Change
+Sustainability
+Conservation
+Ecosystems
+Biodiversity
+Restoration
+
+Requirements:
+
+No repeated questions during session.
+
+Randomized order.
+
+Difficulty progression:
+
+Easy
+Medium
+Hard
+
+After each answer:
+
+Show educational fact.
+
+Example:
+
+"Sea turtles can travel thousands of kilometers during migration."
+
+=================================================================
+AUDIO SYSTEM
+============
+
+REMOVE ALL ANNOYING BUZZER SOUNDS.
+
+DO NOT USE:
+
+* Loud incorrect buzzers
+* Harsh alarms
+* Game-show sounds
+* Aggressive warning tones
+* Stress-inducing sounds
+
+The game should feel calm and educational.
+
+CORRECT ANSWER:
+
+Use:
+
+* Soft chime
+* Gentle nature bell
+* Pleasant success tone
+
+WRONG ANSWER:
+
+Use:
+
+* Soft wooden click
+* Gentle muted tone
+* Light natural sound
+
+NO BUZZER.
+
+NO LOUD ERROR SOUND.
+
+BACKGROUND MUSIC:
+
+Forest:
+
+* Birds
+* Wind
+* Gentle ambience
+
+Water:
+
+* Flowing water
+* Soft ambient music
+
+Desert:
+
+* Calm wind
+* Atmospheric tones
+
+Human Impact:
+
+* Slightly serious ambience
+* Not stressful
+
+Restoration:
+
+* Inspiring relaxing music
+* Nature sounds
+
+Volume should remain comfortable.
+
+Audio should reduce stress, not create stress.
+
+=================================================================
+ANIMATIONS & EFFECTS
+====================
+
+Use:
+
+Leaf particles
+Water particles
+Sparkles
+Nature effects
+Restoration effects
+
+Avoid:
+
+Excessive flashing
+Rapid blinking
+Harsh visual effects
+
+Victory should feel rewarding and peaceful.
+
+=================================================================
+TECHNICAL REQUIREMENTS
+======================
+
+Frontend:
+
+* React
+* Phaser.js
+
+Backend:
+
+* Node.js
+* Socket.IO
+
+Database:
+
+* PostgreSQL
+
+Caching:
+
+* Redis
+
+Performance Goals:
+
+100+ concurrent players
+
+Smooth 60 FPS host display
+
+Efficient sprite sheets
+
+Object pooling
+
+Optimized asset loading
+
+No memory leaks
+
+=================================================================
+FINAL RULE
+==========
+
+The finished product should feel like a professional educational adventure game where real animated animals travel across a living ecosystem board, interact with animated environmental hazards, answer educational questions, and restore nature.
+
+It must not resemble a quiz website, presentation, icon-based board game, or emoji-based prototype.

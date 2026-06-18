@@ -1,0 +1,174 @@
+PROJECT: Eco Learning Board Game (100+ Multiplayer)
+
+IMPORTANT DESIGN REQUIREMENTS:
+
+Do NOT use emojis, Unicode icons, placeholder circles, stick figures, cartoon symbols, or simple colored shapes for animals, hazards, or board elements.
+
+The game must use real 2D game graphics and animated sprites.
+
+VISUAL STYLE:
+
+* High-quality 2D educational adventure game.
+* Light anime-inspired art style.
+* Clean and professional.
+* Suitable for school, college, and hackathon demonstrations.
+* Vibrant colors but not childish.
+* Every asset should look like it belongs in a commercial educational game.
+
+ANIMAL SYSTEM:
+
+* Create 50 unique animal characters.
+* Each animal must have:
+
+  * Idle animation
+  * Walking/running animation
+  * Hazard reaction animation
+  * Victory animation
+* Animals should visibly move across board tiles.
+* Movement must not be teleportation.
+* Animals must walk, hop, crawl, swim, fly, or run depending on species.
+
+Examples:
+
+* Rabbit hops.
+* Turtle slowly walks.
+* Eagle flaps wings and glides.
+* Dolphin leaps.
+* Tiger runs.
+* Snake slithers.
+
+BOARD SYSTEM:
+
+* Build a 100-tile board.
+* Divide into:
+
+  * Forest Zone
+  * Water Zone
+  * Desert Zone
+  * Human Impact Zone
+  * Restoration Zone
+
+Tiles should have unique graphics and environmental details.
+
+HAZARD SYSTEM:
+Hazards must be animated entities, not static images.
+
+Examples:
+
+Predator Attack:
+
+* Eagle swoops downward.
+* Tiger lunges.
+* Wolf runs toward prey.
+
+Pollution:
+
+* Smoke spreads.
+* Plastic waste drifts.
+* Oil spill expands.
+
+Poaching:
+
+* Poacher silhouette appears.
+* Trap activates.
+* Warning animation plays.
+
+Natural Disaster:
+
+* Fire spreads.
+* Flood wave moves.
+* Sandstorm sweeps.
+
+Each hazard should have:
+
+* entrance animation
+* active animation
+* exit animation
+
+ACTION CUTSCENES:
+When a player lands on a hazard tile:
+
+* Pause normal movement.
+* Play a short cinematic event.
+* Show the hazard interacting with the animal.
+* Apply the game effect after animation finishes.
+
+Examples:
+
+* Eagle catches rabbit.
+* Pollution harms turtle habitat.
+* Fire forces animals backward.
+
+MULTIPLAYER VISUALIZATION:
+Support 100+ simultaneous players.
+
+When multiple players occupy the same tile:
+
+* Use a clustering system.
+* Arrange avatars around the tile.
+* Never stack avatars directly on top of each other.
+* Show floating name labels.
+* Animate idle behavior while waiting.
+
+HOST DISPLAY:
+Use Phaser.js rendering.
+
+Layout:
+
+* Main board in center.
+* Live leaderboard.
+* Current question panel.
+* Timer.
+* Event feed.
+
+MOBILE PLAYER VIEW:
+Show:
+
+* Animal portrait.
+* Eco score.
+* Current question.
+* Answer options.
+* Remaining time.
+
+AUDIO:
+Add adaptive background music:
+
+* Forest ambience.
+* Water ambience.
+* Desert ambience.
+* Human impact tension music.
+* Restoration victory music.
+
+Add sound effects:
+
+* Correct answer.
+* Wrong answer.
+* Predator attack.
+* Hazard warning.
+* Movement.
+* Score gain.
+* Victory.
+
+PERFORMANCE:
+Target:
+
+* 100+ concurrent players.
+* Smooth 60 FPS host display.
+* Efficient sprite sheets.
+* Object pooling for animations.
+* Minimize memory usage.
+
+TECH STACK:
+
+* React
+* Phaser.js
+* Node.js
+* Socket.IO
+* PostgreSQL
+* Redis
+
+Generate production-quality code architecture, not prototype code.
+
+Do not use emojis anywhere in the interface.
+
+All animals, hazards, effects, and board elements must be represented using animated sprite graphics and game assets.

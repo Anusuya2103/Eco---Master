@@ -1,0 +1,321 @@
+MAJOR GAME VISUAL REDESIGN
+
+Use the FIRST BOARD VERSION as the design reference.
+
+DO NOT use the latest thick-road version.
+
+The latest board feels like highways or pipes and hides the environment.
+
+Keep the original board style and improve it instead.
+
+=================================================
+BOARD DESIGN
+============
+
+Requirements:
+
+* Keep the original path thickness.
+* Keep the original environmental backgrounds.
+* Keep the original color palette.
+* Keep the original atmosphere.
+
+The board should feel like a living ecosystem.
+
+Zones:
+
+Forest
+Ocean
+Desert
+Human Impact
+Restoration
+
+The environment must be more visible than the path.
+
+Players should feel like animals travelling through nature rather than moving along roads.
+
+=================================================
+ANIMAL VISUAL SYSTEM
+====================
+
+Animals must be the visual focus.
+
+Increase animal size slightly.
+
+Target:
+64px–96px characters.
+
+Every animal must have:
+
+* Idle animation
+* Movement animation
+* Reaction animation
+* Victory animation
+
+Examples:
+
+Rabbit:
+
+* hopping
+
+Tiger:
+
+* running
+
+Eagle:
+
+* flying
+
+Snake:
+
+* slithering
+
+Turtle:
+
+* walking slowly
+
+Animals should have:
+
+* blinking
+* breathing
+* tail movement
+* wing movement
+
+while idle.
+
+=================================================
+MOVEMENT SYSTEM
+===============
+
+Do not teleport.
+
+When moving 5 tiles:
+
+Animal travels through all intermediate tiles.
+
+Example:
+
+Tile 20
+↓
+Tile 21
+↓
+Tile 22
+↓
+Tile 23
+↓
+Tile 24
+↓
+Tile 25
+
+Use smooth movement.
+
+Use animation during movement.
+
+Movement should resemble a real game character.
+
+=================================================
+PREDATOR CUTSCENES
+==================
+
+Replace simple hazard icons with animated events.
+
+Examples:
+
+Eagle Attack:
+
+* eagle flies onto screen
+* dives toward rabbit
+* rabbit reacts
+* penalty applied
+
+Wolf Attack:
+
+* wolf runs across board
+* attack animation
+* penalty applied
+
+Tiger Ambush:
+
+* tiger emerges from bushes
+* attack animation
+
+Cutscenes:
+2–4 seconds.
+
+Pause board during cutscene.
+
+Resume afterwards.
+
+=================================================
+DYNAMIC WEATHER SYSTEM
+======================
+
+Forest:
+
+* falling leaves
+* butterflies
+* birds
+
+Ocean:
+
+* bubbles
+* waves
+* water particles
+
+Desert:
+
+* drifting sand
+* dust
+
+Human Impact:
+
+* smoke
+* pollution particles
+
+Restoration:
+
+* flower petals
+* glowing particles
+
+Weather changes continuously.
+
+=================================================
+DAY NIGHT SYSTEM
+================
+
+Board cycles through:
+
+Morning
+Afternoon
+Sunset
+Night
+
+Lighting should gradually change.
+
+No sudden transitions.
+
+=================================================
+ANIMAL REACTIONS
+================
+
+Correct answer:
+
+Animal celebrates.
+
+Examples:
+
+* jump
+* cheer
+* happy animation
+
+Wrong answer:
+
+Animal reacts sadly.
+
+Examples:
+
+* disappointed pose
+* confused pose
+
+Keep reactions short.
+
+=================================================
+ECOSYSTEM HEALTH METER
+======================
+
+Add a large Ecosystem Health Meter.
+
+Starts low.
+
+Correct answers increase health.
+
+Wrong answers reduce health.
+
+Visual effects:
+
+Low Health:
+
+* polluted water
+* dead plants
+
+High Health:
+
+* flowers
+* wildlife
+* greener environment
+
+The board should visually improve as health increases.
+
+=================================================
+ZONE EVENTS
+===========
+
+At major milestones trigger events.
+
+Tile 20:
+Forest Crisis
+
+Tile 40:
+Ocean Pollution Event
+
+Tile 60:
+Desert Drought Event
+
+Tile 80:
+Industrial Impact Event
+
+Players cooperate to overcome events.
+
+Special animations required.
+
+=================================================
+RESTORATION FINALE
+==================
+
+When a player reaches tile 100:
+
+Do NOT simply show Winner.
+
+Play a restoration sequence.
+
+Examples:
+
+* trees grow
+* flowers bloom
+* rivers become clean
+* animals return
+
+The winning animal becomes the leader of restoration.
+
+Show a cinematic ending.
+
+=================================================
+CAMERA SYSTEM
+=============
+
+Add dynamic camera.
+
+During hazards:
+
+* zoom to event
+
+During victory:
+
+* zoom to winner
+
+During restoration:
+
+* cinematic camera movement
+
+Return smoothly to board view.
+
+=================================================
+IMPORTANT
+=========
+
+The goal is not to make the board larger.
+
+The goal is to make the world feel alive.
+
+The first board version already had the correct atmosphere.
+
+Improve immersion, animations, wildlife, weather, ecosystem recovery, and cinematic events while preserving the original board style.
