@@ -44,6 +44,9 @@ export default function PlayerView() {
   const [phase, setPhase] = useState<Phase>("join");
   const [roomId, setRoomId] = useState("");
   const [myPlayerId, setMyPlayerId] = useState("");
+  const [winner, setWinner] = useState<{ name: string; animalId: string; ecoScore: number; colorPrimary?: string; colorSecondary?: string } | null>(null);
+  const [myFinalRank, setMyFinalRank] = useState(0);
+  const [myFinalScore, setMyFinalScore] = useState(0);
   const [allPlayers, setAllPlayers] = useState<PlayerState[]>([]);
 
   const [question, setQuestion] = useState<{
@@ -145,20 +148,16 @@ export default function PlayerView() {
       }, 5000);
     });
 
-    socket.on("game_over", (data: { leaderboard: any[] }) => {
+    socket.on("game_over", (data: { leaderboard: any[]; winner?: any }) => {
       audio.playFanfare();
       setPhase("gameover");
+      if (data.winner) setWinner(data.winner);
       setMyPlayerId((myId) => {
         const rank = data.leaderboard.findIndex((l) => l.playerId === myId) + 1;
-        toast({
-          title: rank === 1 ? "You Won!" : `Game Over — Rank #${rank}`,
-          description: `Final eco-score: ${data.leaderboard.find((l) => l.playerId === myId)?.ecoScore ?? 0}`,
-        });
+        const score = data.leaderboard.find((l) => l.playerId === myId)?.ecoScore ?? 0;
+        setMyFinalRank(rank);
+        setMyFinalScore(score);
         return myId;
-      });
-      setRoomId((rid) => {
-        setTimeout(() => setLocation(`/results/${rid}`), 2500);
-        return rid;
       });
     });
 
@@ -268,26 +267,52 @@ export default function PlayerView() {
 
   // ── GAME OVER ─────────────────────────────────────────────────────────────
   if (phase === "gameover") {
+    const isWinner = myFinalRank === 1;
+    const winnerAnimal = winner ? animals.find((a) => a.id === winner.animalId) : null;
     return (
-      <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 text-center bg-background">
-        <div className="w-16 h-16 mb-4 mx-auto">
-          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-            <rect x="12" y="8" width="4" height="48" fill="#9ca3af" rx="2"/>
-            <rect x="16" y="8" width="32" height="24" fill="none"/>
-            {[0,1,2,3,4,5,6,7].map((i) => (
-              <rect
-                key={i}
-                x={16 + (i % 4) * 8}
-                y={8 + Math.floor(i / 4) * 12}
-                width={8}
-                height={12}
-                fill={(Math.floor(i / 4) + (i % 4)) % 2 === 0 ? "white" : "#1a1a2e"}
-              />
-            ))}
-          </svg>
+      <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 text-center bg-background gap-6">
+        {/* Trophy */}
+        <div className="text-7xl animate-bounce">{isWinner ? "🏆" : "🎖️"}</div>
+
+        {/* Winner announcement */}
+        {winner && (
+          <div className="flex flex-col items-center gap-3">
+            <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Winner</p>
+            <div className="flex items-center gap-3 bg-primary/10 border border-primary/30 rounded-2xl px-5 py-3">
+              {winnerAnimal && (
+                <AnimalPortrait
+                  animalId={winnerAnimal.id}
+                  colorPrimary={winner.colorPrimary ?? winnerAnimal.colorPrimary}
+                  colorSecondary={winner.colorSecondary ?? winnerAnimal.colorSecondary}
+                  size={48}
+                />
+              )}
+              <div className="text-left">
+                <p className="text-xl font-bold text-primary leading-tight">{winner.name}</p>
+                <p className="text-sm text-muted-foreground">{winner.ecoScore} eco pts</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* This player's result */}
+        <div className="flex flex-col items-center gap-1">
+          {isWinner ? (
+            <p className="text-2xl font-bold text-amber-500">You won! 🎉</p>
+          ) : (
+            <p className="text-xl font-semibold text-foreground">You finished <span className="text-primary">#{myFinalRank}</span></p>
+          )}
+          <p className="text-sm text-muted-foreground">Final eco-score: <span className="font-bold text-foreground">{myFinalScore}</span></p>
         </div>
-        <h2 className="text-3xl font-bold text-primary mb-2">Game Over!</h2>
-        <p className="text-muted-foreground">Redirecting to results…</p>
+
+        {/* View results */}
+        <Button
+          size="lg"
+          className="w-full max-w-xs text-base"
+          onClick={() => setRoomId((rid) => { setLocation(`/results/${rid}`); return rid; })}
+        >
+          View Full Results
+        </Button>
       </div>
     );
   }

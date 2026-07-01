@@ -157,17 +157,18 @@ export default function HostView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
-  useEffect(() => {
-    if (gameState === "finished" && socketRoomId && finaleShown) {
-      const timer = setTimeout(() => setLocation(`/results/${socketRoomId}`), 500);
-      return () => clearTimeout(timer);
-    }
-    return undefined;
-  }, [gameState, socketRoomId, finaleShown, setLocation]);
-
   const handleFinaleComplete = useCallback(() => {
     setFinaleShown(true);
   }, []);
+
+  const handleFinaleClose = useCallback(() => {
+    setFinaleShown(false);
+    setFinaleWinner(null);
+  }, []);
+
+  const handleViewResults = useCallback(() => {
+    if (socketRoomId) setLocation(`/results/${socketRoomId}`);
+  }, [socketRoomId, setLocation]);
 
   const handleStart = () => {
     if (!socketRoomId) return;
@@ -195,6 +196,27 @@ export default function HostView() {
     <div className="flex flex-col md:flex-row h-screen w-full bg-background overflow-hidden">
       {finaleWinner && !finaleShown && (
         <RestorationFinale winner={finaleWinner} onComplete={handleFinaleComplete} />
+      )}
+      {/* After finale: winner banner stays until host closes it */}
+      {finaleWinner && finaleShown && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-card border border-primary/40 rounded-3xl p-10 flex flex-col items-center gap-5 shadow-2xl max-w-md w-full mx-4 text-center">
+            <div className="text-6xl">🏆</div>
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground mb-1">Winner</p>
+              <p className="text-4xl font-bold text-primary">{finaleWinner.name}</p>
+              <p className="text-lg text-muted-foreground mt-1">{finaleWinner.ecoScore} eco pts</p>
+            </div>
+            <div className="flex gap-3 w-full mt-2">
+              <Button variant="outline" className="flex-1" onClick={handleFinaleClose}>
+                Back to Board
+              </Button>
+              <Button className="flex-1" onClick={handleViewResults}>
+                View Results
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="flex-1 relative">
@@ -280,7 +302,9 @@ export default function HostView() {
             </Button>
           )}
           {gameState === "finished" && (
-            <div className="text-center text-muted-foreground text-sm">Redirecting to results…</div>
+            <Button size="lg" className="w-full text-lg" onClick={handleViewResults}>
+              View Results
+            </Button>
           )}
         </div>
       </div>
