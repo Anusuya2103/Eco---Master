@@ -1,6 +1,6 @@
-# [Project name]
+# EcoQuest
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A multiplayer ecology board game where players race across a 100-tile board by answering environmental quiz questions, choosing animal avatars with unique traits.
 
 ## Run & Operate
 

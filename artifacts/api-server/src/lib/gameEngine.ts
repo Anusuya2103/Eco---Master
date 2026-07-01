@@ -28,6 +28,8 @@ export interface GameRoom {
   currentRound: number;
   totalRounds: number;
   roundTimer: ReturnType<typeof setTimeout> | null;
+  tickInterval: ReturnType<typeof setInterval> | null;
+  roundProcessing: boolean;
   roundAnswers: Map<string, number>;
   hostReconnectTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -90,6 +92,8 @@ function getAnimalMoveRange(animalId: string): { min: number; max: number } {
 
 function processRound(io: SocketIOServer, room: GameRoom) {
   if (!room.currentQuestion) return;
+  if (room.roundProcessing) return; // idempotency guard — prevent double-processing
+  room.roundProcessing = true;
 
   const q = room.currentQuestion;
   const playerResults: {
@@ -233,6 +237,7 @@ function processRound(io: SocketIOServer, room: GameRoom) {
 function startRound(io: SocketIOServer, room: GameRoom) {
   room.currentRound += 1;
   room.roundAnswers.clear();
+  room.roundProcessing = false;
   const q = pickQuestion(room);
   room.currentQuestion = q;
   room.usedQuestions.add(q.id);
@@ -247,27 +252,30 @@ function startRound(io: SocketIOServer, room: GameRoom) {
     totalRounds: room.totalRounds,
   });
 
-  // Timer ticks every second
+  // Timer ticks every second — stored on room so any early-end path can cancel it
   let timeLeft = ROUND_TIME_MS;
-  const tickInterval = setInterval(() => {
+  if (room.tickInterval) clearInterval(room.tickInterval);
+  room.tickInterval = setInterval(() => {
     timeLeft -= 1000;
     io.to(room.id).emit("timer_tick", { timeLeft });
     if (timeLeft <= 0) {
-      clearInterval(tickInterval);
+      clearInterval(room.tickInterval!);
+      room.tickInterval = null;
     }
   }, 1000);
 
   // Auto-process round after time limit
   if (room.roundTimer) clearTimeout(room.roundTimer);
   room.roundTimer = setTimeout(() => {
-    clearInterval(tickInterval);
+    if (room.tickInterval) { clearInterval(room.tickInterval); room.tickInterval = null; }
     processRound(io, room);
   }, ROUND_TIME_MS);
 }
 
 function endGame(io: SocketIOServer, room: GameRoom) {
   room.state = "finished";
-  if (room.roundTimer) clearTimeout(room.roundTimer);
+  if (room.roundTimer) { clearTimeout(room.roundTimer); room.roundTimer = null; }
+  if (room.tickInterval) { clearInterval(room.tickInterval); room.tickInterval = null; }
 
   const leaderboard = buildLeaderboard(room);
   const winner = Array.from(room.players.values()).find(
@@ -318,8 +326,10 @@ export function initSocketIO(httpServer: HTTPServer) {
         usedQuestions: new Set(),
         currentQuestion: null,
         currentRound: 0,
-        totalRounds: 10,
+        totalRounds: 25,
         roundTimer: null,
+        tickInterval: null,
+        roundProcessing: false,
         roundAnswers: new Map(),
         hostReconnectTimer: null,
       };
@@ -490,9 +500,12 @@ export function initSocketIO(httpServer: HTTPServer) {
 
         // If all non-host players answered, process early
         const nonHostCount = Array.from(room.players.values()).filter((p) => !p.isHost).length;
-        const answered = room.roundAnswers.size;
-        if (nonHostCount > 0 && answered >= nonHostCount) {
-          if (room.roundTimer) clearTimeout(room.roundTimer);
+        const nonHostAnswered = Array.from(room.roundAnswers.keys()).filter(
+          (id) => !room.players.get(id)?.isHost
+        ).length;
+        if (nonHostCount > 0 && nonHostAnswered >= nonHostCount) {
+          if (room.roundTimer) { clearTimeout(room.roundTimer); room.roundTimer = null; }
+          if (room.tickInterval) { clearInterval(room.tickInterval); room.tickInterval = null; }
           setTimeout(() => processRound(io, room), 500);
         }
       }
@@ -581,7 +594,8 @@ export function initSocketIO(httpServer: HTTPServer) {
             socketToPlayer.delete(socket.id);
 
             if (room.players.size === 0) {
-              if (room.roundTimer) clearTimeout(room.roundTimer);
+              if (room.roundTimer) { clearTimeout(room.roundTimer); room.roundTimer = null; }
+              if (room.tickInterval) { clearInterval(room.tickInterval); room.tickInterval = null; }
               rooms.delete(roomId);
               codeToRoom.delete(room.code);
             } else {
