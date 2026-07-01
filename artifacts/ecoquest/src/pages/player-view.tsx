@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useSocket } from "@/hooks/use-socket";
 import { useListAnimals } from "@workspace/api-client-react";
@@ -20,6 +20,7 @@ interface PlayerState {
   animalId: string;
   position: number;
   ecoScore: number;
+  isHost?: boolean;
 }
 
 interface RoundResult {
@@ -64,7 +65,64 @@ export default function PlayerView() {
   const [chosenIndex, setChosenIndex] = useState<number | null>(null);
 
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null);
+  const [hostDisconnected, setHostDisconnected] = useState(false);
   const boardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref so the round_result handler always reads the current question without
+  // being in the useEffect dep array (which would re-register all listeners on
+  // every new question, creating a gap where events can be missed).
+  const questionRef = useRef(question);
+  useEffect(() => { questionRef.current = question; }, [question]);
+
+  const handleRoundResult = useCallback((data: {
+    correctIndex: number;
+    explanation: string;
+    playerResults: { playerId: string; correct: boolean; moved: number; newPosition: number; ecoScore: number }[];
+    leaderboard: { playerId: string; position: number; ecoScore: number }[];
+  }) => {
+    setAllPlayers((prev) =>
+      prev.map((p) => {
+        const lr = data.leaderboard.find((l) => l.playerId === p.id);
+        return lr ? { ...p, position: lr.position, ecoScore: lr.ecoScore } : p;
+      })
+    );
+
+    setCorrectIndexResult(data.correctIndex);
+
+    setMyPlayerId((myId) => {
+      const myResult = data.playerResults.find((r) => r.playerId === myId);
+      const currentQuestion = questionRef.current;
+      if (myResult && currentQuestion) {
+        if (myResult.correct) {
+          audio.playDing();
+          setStreak((s) => s + 1);
+        } else {
+          audio.playBuzz();
+          setStreak(0);
+        }
+        setTimeout(() => {
+          const pos = myResult.newPosition;
+          if (isTileHazard(pos)) audio.playHazard();
+          else if (isTileBonus(pos)) audio.playBonus();
+        }, 900);
+        setRoundResult({
+          correct: myResult.correct,
+          moved: myResult.moved,
+          newPosition: myResult.newPosition,
+          explanation: data.explanation,
+          correctOption: currentQuestion.options[data.correctIndex] ?? "",
+        });
+      }
+      return myId;
+    });
+
+    setQuestion(null);
+    setPhase("board");
+
+    boardTimerRef.current = setTimeout(() => {
+      setPhase("waiting");
+      setRoundResult(null);
+    }, 5000);
+  }, []);
 
   useEffect(() => {
     if (!socket) return;
@@ -89,6 +147,7 @@ export default function PlayerView() {
       zone: string; timeLimit: number; round: number; totalRounds: number;
     }) => {
       if (boardTimerRef.current) clearTimeout(boardTimerRef.current);
+      setHostDisconnected(false);
       setRoundResult(null);
       setCorrectIndexResult(null);
       setQuestion(data);
@@ -105,57 +164,9 @@ export default function PlayerView() {
       else if (secs <= 6) audio.playTick();
     });
 
-    socket.on("round_result", (data: {
-      correctIndex: number;
-      explanation: string;
-      playerResults: { playerId: string; correct: boolean; moved: number; newPosition: number; ecoScore: number }[];
-      leaderboard: any[];
-    }) => {
-      setAllPlayers((prev) =>
-        prev.map((p) => {
-          const lr = data.leaderboard.find((l) => l.playerId === p.id);
-          return lr ? { ...p, position: lr.position, ecoScore: lr.ecoScore } : p;
-        })
-      );
+    socket.on("round_result", handleRoundResult);
 
-      setCorrectIndexResult(data.correctIndex);
-
-      setMyPlayerId((myId) => {
-        const myResult = data.playerResults.find((r) => r.playerId === myId);
-        if (myResult && question) {
-          if (myResult.correct) {
-            audio.playDing();
-            setStreak((s) => s + 1);
-          } else {
-            audio.playBuzz();
-            setStreak(0);
-          }
-          setTimeout(() => {
-            const pos = myResult.newPosition;
-            if (isTileHazard(pos)) audio.playHazard();
-            else if (isTileBonus(pos)) audio.playBonus();
-          }, 900);
-          setRoundResult({
-            correct: myResult.correct,
-            moved: myResult.moved,
-            newPosition: myResult.newPosition,
-            explanation: data.explanation,
-            correctOption: question.options[data.correctIndex] ?? "",
-          });
-        }
-        return myId;
-      });
-
-      setQuestion(null);
-      setPhase("board");
-
-      boardTimerRef.current = setTimeout(() => {
-        setPhase("waiting");
-        setRoundResult(null);
-      }, 5000);
-    });
-
-    socket.on("game_over", (data: { leaderboard: any[]; winner?: any }) => {
+    socket.on("game_over", (data: { leaderboard: { playerId: string; ecoScore: number }[]; winner?: { name: string; animalId: string; ecoScore: number; colorPrimary?: string; colorSecondary?: string } }) => {
       audio.playFanfare();
       setPhase("gameover");
       if (data.winner) setWinner(data.winner);
@@ -168,6 +179,10 @@ export default function PlayerView() {
       });
     });
 
+    socket.on("host_disconnected", () => {
+      setHostDisconnected(true);
+    });
+
     socket.on("error", (data: { message: string }) => {
       toast({ title: data.message, variant: "destructive" });
     });
@@ -178,11 +193,12 @@ export default function PlayerView() {
       socket.off("positions_updated");
       socket.off("question");
       socket.off("timer_tick");
-      socket.off("round_result");
+      socket.off("round_result", handleRoundResult);
       socket.off("game_over");
+      socket.off("host_disconnected");
       socket.off("error");
     };
-  }, [socket, question]);
+  }, [socket, handleRoundResult]);
 
   const handleJoin = () => {
     if (!playerName.trim()) {
@@ -331,7 +347,7 @@ export default function PlayerView() {
   const myLivePlayer = allPlayers.find((p) => p.id === myPlayerId);
   const myLiveScore = myLivePlayer?.ecoScore ?? 0;
   const myLiveRank = [...allPlayers]
-    .filter((p) => !(p as any).isHost)
+    .filter((p) => !p.isHost)
     .sort((a, b) => (b.ecoScore ?? 0) - (a.ecoScore ?? 0))
     .findIndex((p) => p.id === myPlayerId) + 1;
 
@@ -366,6 +382,13 @@ export default function PlayerView() {
           <span className="text-sm font-bold text-foreground tabular-nums">{myLiveScore} <span className="text-xs font-normal text-muted-foreground">pts</span></span>
         </div>
       </div>
+
+      {hostDisconnected && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-400 text-sm font-medium">
+          <span className="animate-pulse">⚠️</span>
+          Waiting for host to reconnect…
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
 

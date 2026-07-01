@@ -147,16 +147,22 @@ export default function HostView() {
       }
     });
 
-    socket.on("hazard_event", (data: { playerId: string; tileIndex: number; type?: string; penalty?: number }) => {
-      setHazardEvent({ type: data.type || "hazard", tileIndex: data.tileIndex, playerId: data.playerId });
-      setEcosystemHealth(prev => Math.max(0, prev - 8));
-      setTimeout(() => setHazardEvent(null), 3000);
+    socket.on("hazard_event", (data: { type: string; affectedPlayers: { playerId: string; tileIndex: number }[] }) => {
+      const first = data.affectedPlayers?.[0];
+      if (first) {
+        setHazardEvent({ type: data.type || "hazard", tileIndex: first.tileIndex, playerId: first.playerId });
+        setTimeout(() => setHazardEvent(null), 3000);
+      }
+      setEcosystemHealth(prev => Math.max(0, prev - 8 * (data.affectedPlayers?.length ?? 1)));
     });
 
-    socket.on("bonus_event", (data: { playerId: string; tileIndex: number; bonus?: number }) => {
-      setBonusEvent({ tileIndex: data.tileIndex, playerId: data.playerId });
-      setEcosystemHealth(prev => Math.min(100, prev + 6));
-      setTimeout(() => setBonusEvent(null), 2500);
+    socket.on("bonus_event", (data: { type: string; affectedPlayers: { playerId: string; tileIndex: number }[] }) => {
+      const first = data.affectedPlayers?.[0];
+      if (first) {
+        setBonusEvent({ tileIndex: first.tileIndex, playerId: first.playerId });
+        setTimeout(() => setBonusEvent(null), 2500);
+      }
+      setEcosystemHealth(prev => Math.min(100, prev + 6 * (data.affectedPlayers?.length ?? 1)));
     });
 
     const handleRejoinError = (data: { message: string }) => {
