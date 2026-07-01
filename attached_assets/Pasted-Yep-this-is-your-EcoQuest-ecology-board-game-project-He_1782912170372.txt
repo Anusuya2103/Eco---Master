@@ -1,0 +1,70 @@
+Yep, this is your EcoQuest ecology board game project. Here's what's in the repo:
+Structure — a pnpm monorepo (Eco---Master) with:
+
+artifacts/ecoquest — React + Vite frontend (shadcn/ui component library, game-board.tsx at 72K, plus host-view.tsx, player-view.tsx, results.tsx, home.tsx pages)
+artifacts/api-server — Express 5 backend with Socket.IO for real-time gameplay
+lib/db — Drizzle ORM + Postgres setup, but the schema file is still just boilerplate/empty (export {}) — no tables defined yet
+lib/api-spec, lib/api-zod, lib/api-client-react — OpenAPI spec + generated Zod validators/React hooks (Orval codegen)
+artifacts/mockup-sandbox — separate sandbox app
+
+Game logic (gameEngine.ts + gameData.ts):
+
+50 animals across 5 groups (forest, water, sky, desert, grassland), each with a move range, hazard resistance, and unique special ability
+200 quiz questions tagged by zone (forest/ocean/desert/human_impact/restoration) and difficulty
+Full round loop: pick a question → broadcast to room via Socket.IO → 12s timer → score answers with streak multipliers → apply hazard/bonus tile effects (tiles divisible by 7 = hazard, by 11 = bonus) → check win condition (first to tile 100) → next round
+Host reconnect grace period (60s) and player disconnect handling are implemented
+REST routes (rooms.ts, questions.ts, animals.ts) mostly just expose read-only room/leaderboard state — room creation is intentionally routed through Socket.IO only
+
+Status notes:
+
+replit.md is still the unfilled template (no project description, architecture notes, or gotchas written in)
+Game state lives entirely in-memory (Maps in gameEngine.ts) — nothing is persisted to Postgres yet despite the DB package being scaffolded
+
+Want me to dig into a specific piece — e.g. the frontend game-board.tsx, the OpenAPI spec, or check whether the host/participant view split you mentioned wanting is fully wired up?can you see what are shortcomings in the gameRan 4 commandsRan 4 commandsConfirmed — only the host can rejoin after a disconnect; players cannot. Now I have a solid picture. Here are the real shortcomings I found, roughly in order of severity:
+Correctness/security bugs
+
+Answer key is exposed publicly. GET /questions (in routes/questions.ts) returns the full QUESTIONS objects straight from gameData.ts, including correctIndex and explanation. Anyone can hit this REST endpoint before or during a game and know every correct answer in advance. This is the most serious issue — it undermines the whole quiz mechanic.
+Only the host can reconnect. rejoin_host exists, but there's no equivalent for regular players. If a player's socket drops (weak wifi, phone lock, tab refresh) they're permanently removed from room.players and lose all progress — no way back in.
+Room codes aren't checked for collisions. create_room generates a 6-char code via Math.random().toString(36) and just overwrites codeToRoom.set(code, roomId) without checking if that code is already in use. With enough concurrent rooms, two rooms could silently collide and players would join the wrong game.
+Tile 77 bug. Hazard tiles are index % 7 === 0, bonus tiles are index % 11 === 0. Tile 77 satisfies both, but getTileType is an if/else, so hazard silently wins and the bonus branch is unreachable there — a minor but real logic bug in board design.
+
+Unimplemented / dead features
+
+Special abilities are flavor text only. Every one of the 50 animals has a unique specialAbility string (e.g. "Never goes backward from wrong answer," "Move +2 when another wolf is on same tile"), but none of this is actually wired into gameEngine.ts. The engine only reads moveRange and hazardResistance — the abilities are pure UI copy right now, not functional mechanics.
+frozenRounds is dead code. The Player type has a frozenRounds field and processRound checks/decrements it, but nothing in the codebase ever sets it above 0. It's a scaffolded mechanic (maybe meant for a hazard effect) that never got hooked up.
+
+Architecture gaps
+
+No persistence at all. Everything (rooms, players, scores) lives in in-memory Maps in gameEngine.ts. A server restart or crash wipes every active game. The Drizzle/Postgres package (lib/db) is scaffolded but its schema file is still empty (export {}) — it's not actually used anywhere.
+CORS wide open. Socket.IO is configured with cors: { origin: "*" }, fine for local dev but not something you'd want in a deployed version.
+No input validation/sanitization on names. hostName and playerName are taken as-is from the socket payload — no length cap, no profanity/XSS filtering before they get broadcast and rendered to every client.
+No tests anywhere in the repo — no *.test.ts/*.spec.ts files, so the scoring math, multiplier logic, and win conditions have no regression safety net.
+
+Minor
+
+game-board.tsx is 72K/one file — a lot of UI logic concentrated in a single component, which will get harder to maintain.
+endGame's tie-break when nobody reaches tile 100 sorts only by ecoScore, while the in-round buildLeaderboard breaks ties by ecoScore → position → correctAnswers. Slightly inconsistent tie-break rules between "who's shown as leading" and "who's declared the winner."
+
+The biggest one to fix first is #1 — that's a genuine cheat vector, not just a nice-to-have. Want me to patch the /questions route to strip correctIndex/explanation before sending, and wire up a rejoin_player event to match rejoin_host?i am asking like the game ending in the middle of nowhere and timing mismatchRan 2 commandsRan 2 commandsConfirmed both bugs. Here's exactly what's happening:
+1. Timing mismatch — orphaned timer intervals
+In startRound(), the countdown is built like this:
+jslet timeLeft = ROUND_TIME_MS;
+const tickInterval = setInterval(() => {
+  timeLeft -= 1000;
+  io.to(room.id).emit("timer_tick", { timeLeft });
+  if (timeLeft <= 0) clearInterval(tickInterval);
+}, 1000);
+tickInterval is a local variable, never stored on the room object. Meanwhile, when all non-host players answer early, submit_answer does this:
+jsif (room.roundTimer) clearTimeout(room.roundTimer);
+setTimeout(() => processRound(io, room), 500);
+It clears room.roundTimer (the setTimeout that would normally call processRound), but it has no way to reach tickInterval and stop it — because it was never saved anywhere accessible. So the old interval just keeps running in the background, firing timer_tick every second for up to 12 more ticks, even though the round already ended and the next round has already started its own new interval. You end up with two (or more, if players keep answering early) countdown intervals broadcasting conflicting timeLeft values to every client at once — that's your timing mismatch. It gets worse the more rounds finish early, since each one leaves behind an orphaned interval.
+Fix: store the interval on the room object (e.g. room.tickInterval) just like roundTimer, and clear both together whenever a round ends — either from the timeout or from early completion in submit_answer.
+2. Game ending "in the middle of nowhere"
+This is a design mismatch, not just a bug: the board has TILE_COUNT = 100, but every room is hardcoded to totalRounds: 10, and the game always ends the moment currentRound >= totalRounds — regardless of anyone's position. Average move per correct answer across the 50 animals is roughly 3–5 tiles, so over 10 rounds a player realistically ends up somewhere around tile 20–35, nowhere near tile 100. In practice, the round-limit end condition fires essentially every single game, and reaching tile 100 (winner || room.currentRound >= room.totalRounds) almost never happens. So players are watching a 100-tile board that's designed to make it look like a race to the end, but the game always cuts off around a third of the way through — which will read exactly as "ending in the middle of nowhere," because it is.
+Fix options:
+
+Raise totalRounds (e.g. to 20–25) so average movement gets closer to 100, or
+Shrink TILE_COUNT to match realistic 10-round movement (e.g. ~40), or
+Make totalRounds host-configurable at room creation and scale tile count/move ranges to match whatever they pick.
+
+There's also a related, quieter issue: player-view.tsx has no listener for the host_disconnected event at all, so if the host's connection blips, players get zero warning — they just keep playing until the 60-second grace period silently expires and game_over fires out of nowhere. Worth adding a "waiting for host to reconnect…" banner on the player side too.
