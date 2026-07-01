@@ -54,12 +54,28 @@ export default function HostView() {
   useEffect(() => {
     if (!socket) return;
 
-    socket.emit("create_room", { hostName });
+    // Try to rejoin an existing room (e.g. after a brief disconnect), else create a new one
+    const savedCode = sessionStorage.getItem("ecoquest_host_room_code");
+    const savedName = sessionStorage.getItem("ecoquest_host_name");
+    if (savedCode && savedName === hostName) {
+      socket.emit("rejoin_host", { roomCode: savedCode });
+    } else {
+      socket.emit("create_room", { hostName });
+    }
 
     socket.on("room_created", (data: { roomId: string; roomCode: string; players: Player[] }) => {
       setSocketRoomId(data.roomId);
       setRoomCode(data.roomCode);
       setPlayers(data.players);
+      sessionStorage.setItem("ecoquest_host_room_code", data.roomCode);
+      sessionStorage.setItem("ecoquest_host_name", hostName);
+    });
+
+    socket.on("host_rejoined", (data: { roomId: string; roomCode: string; players: Player[]; state: string; currentRound: number; totalRounds: number }) => {
+      setSocketRoomId(data.roomId);
+      setRoomCode(data.roomCode);
+      setPlayers(data.players);
+      if (data.state === "playing") setGameState("playing");
     });
 
     socket.on("player_joined", (data: { players: Player[] }) => {
@@ -116,6 +132,8 @@ export default function HostView() {
 
     socket.on("game_over", (data: { leaderboard: any[]; winner?: any }) => {
       setGameState("finished");
+      sessionStorage.removeItem("ecoquest_host_room_code");
+      sessionStorage.removeItem("ecoquest_host_name");
       if (data.winner) {
         setFinaleWinner({
           name: data.winner.name,
@@ -141,8 +159,20 @@ export default function HostView() {
       setTimeout(() => setBonusEvent(null), 2500);
     });
 
+    const handleRejoinError = (data: { message: string }) => {
+      // If the saved room is gone or finished, start fresh
+      if (data.message === "Room not found" || data.message === "Game already finished") {
+        sessionStorage.removeItem("ecoquest_host_room_code");
+        sessionStorage.removeItem("ecoquest_host_name");
+        socket.emit("create_room", { hostName });
+      }
+    };
+    socket.on("error", handleRejoinError);
+
     return () => {
       socket.off("room_created");
+      socket.off("host_rejoined");
+      socket.off("error", handleRejoinError);
       socket.off("player_joined");
       socket.off("player_left");
       socket.off("game_started");

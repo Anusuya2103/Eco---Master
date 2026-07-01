@@ -29,6 +29,7 @@ export interface GameRoom {
   totalRounds: number;
   roundTimer: ReturnType<typeof setTimeout> | null;
   roundAnswers: Map<string, number>;
+  hostReconnectTimer: ReturnType<typeof setTimeout> | null;
 }
 
 // In-memory store — exported so REST routes can read room data
@@ -320,6 +321,7 @@ export function initSocketIO(httpServer: HTTPServer) {
         totalRounds: 10,
         roundTimer: null,
         roundAnswers: new Map(),
+        hostReconnectTimer: null,
       };
 
       const randomAnimal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
@@ -486,10 +488,10 @@ export function initSocketIO(httpServer: HTTPServer) {
           playerName: player.name,
         });
 
-        // If all players answered, process early
-        const totalPlayers = room.players.size;
+        // If all non-host players answered, process early
+        const nonHostCount = Array.from(room.players.values()).filter((p) => !p.isHost).length;
         const answered = room.roundAnswers.size;
-        if (answered >= totalPlayers) {
+        if (nonHostCount > 0 && answered >= nonHostCount) {
           if (room.roundTimer) clearTimeout(room.roundTimer);
           setTimeout(() => processRound(io, room), 500);
         }
@@ -506,24 +508,82 @@ export function initSocketIO(httpServer: HTTPServer) {
       endGame(io, room);
     });
 
+    // ── Rejoin as host after disconnect ────────────────────────────────────
+    socket.on("rejoin_host", ({ roomCode }: { roomCode: string }) => {
+      const roomId = codeToRoom.get(roomCode.toUpperCase());
+      if (!roomId) { socket.emit("error", { message: "Room not found" }); return; }
+      const room = rooms.get(roomId);
+      if (!room) { socket.emit("error", { message: "Room not found" }); return; }
+      if (room.state === "finished") { socket.emit("error", { message: "Game already finished" }); return; }
+
+      // Cancel pending host-end timer
+      if (room.hostReconnectTimer) {
+        clearTimeout(room.hostReconnectTimer);
+        room.hostReconnectTimer = null;
+      }
+
+      // Re-assign host socket — move host player record to new socket id
+      const oldHostPlayer = room.players.get(room.hostSocketId);
+      if (oldHostPlayer) {
+        room.players.delete(room.hostSocketId);
+        socketToRoom.delete(room.hostSocketId);
+        socketToPlayer.delete(room.hostSocketId);
+        oldHostPlayer.id = socket.id;
+        room.players.set(socket.id, oldHostPlayer);
+      }
+      room.hostSocketId = socket.id;
+      socketToRoom.set(socket.id, roomId);
+      socketToPlayer.set(socket.id, socket.id);
+
+      socket.join(roomId);
+      socket.emit("host_rejoined", {
+        roomId,
+        roomCode,
+        playerId: socket.id,
+        players: Array.from(room.players.values()),
+        state: room.state,
+        currentRound: room.currentRound,
+        totalRounds: room.totalRounds,
+      });
+      logger.info({ roomId, socketId: socket.id }, "Host rejoined");
+    });
+
     // ── Disconnect ─────────────────────────────────────────────────────────
     socket.on("disconnect", () => {
       const roomId = socketToRoom.get(socket.id);
       if (roomId) {
         const room = rooms.get(roomId);
         if (room) {
-          room.players.delete(socket.id);
-          socketToRoom.delete(socket.id);
-          socketToPlayer.delete(socket.id);
+          const isHost = room.hostSocketId === socket.id;
 
-          if (room.players.size === 0) {
-            if (room.roundTimer) clearTimeout(room.roundTimer);
-            rooms.delete(roomId);
-            codeToRoom.delete(room.code);
+          if (isHost) {
+            // Give the host 60 s to reconnect before ending the game
+            socketToRoom.delete(socket.id);
+            socketToPlayer.delete(socket.id);
+            io.to(roomId).emit("host_disconnected", {});
+            logger.info({ roomId }, "Host disconnected — 60 s grace period started");
+
+            if (room.hostReconnectTimer) clearTimeout(room.hostReconnectTimer);
+            room.hostReconnectTimer = setTimeout(() => {
+              if (room.state === "playing") {
+                logger.info({ roomId }, "Host grace period expired — ending game");
+                endGame(io, room);
+              }
+              room.players.delete(socket.id);
+              if (room.players.size === 0) {
+                rooms.delete(roomId);
+                codeToRoom.delete(room.code);
+              }
+            }, 60_000);
           } else {
-            // If the host disconnected, end the game
-            if (room.hostSocketId === socket.id && room.state === "playing") {
-              endGame(io, room);
+            room.players.delete(socket.id);
+            socketToRoom.delete(socket.id);
+            socketToPlayer.delete(socket.id);
+
+            if (room.players.size === 0) {
+              if (room.roundTimer) clearTimeout(room.roundTimer);
+              rooms.delete(roomId);
+              codeToRoom.delete(room.code);
             } else {
               io.to(roomId).emit("player_left", {
                 playerId: socket.id,
