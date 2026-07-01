@@ -48,6 +48,8 @@ export default function PlayerView() {
   const [myFinalRank, setMyFinalRank] = useState(0);
   const [myFinalScore, setMyFinalScore] = useState(0);
   const [allPlayers, setAllPlayers] = useState<PlayerState[]>([]);
+  const [streak, setStreak] = useState(0);
+  const [correctIndexResult, setCorrectIndexResult] = useState<number | null>(null);
 
   const [question, setQuestion] = useState<{
     questionId: string;
@@ -88,6 +90,7 @@ export default function PlayerView() {
     }) => {
       if (boardTimerRef.current) clearTimeout(boardTimerRef.current);
       setRoundResult(null);
+      setCorrectIndexResult(null);
       setQuestion(data);
       setTimeLeft(data.timeLimit);
       setChosenIndex(null);
@@ -115,13 +118,17 @@ export default function PlayerView() {
         })
       );
 
+      setCorrectIndexResult(data.correctIndex);
+
       setMyPlayerId((myId) => {
         const myResult = data.playerResults.find((r) => r.playerId === myId);
         if (myResult && question) {
           if (myResult.correct) {
             audio.playDing();
+            setStreak((s) => s + 1);
           } else {
             audio.playBuzz();
+            setStreak(0);
           }
           setTimeout(() => {
             const pos = myResult.newPosition;
@@ -321,6 +328,13 @@ export default function PlayerView() {
   const answerLetters = ["A", "B", "C", "D"];
 
   // ── IN-GAME SCREENS ───────────────────────────────────────────────────────
+  const myLivePlayer = allPlayers.find((p) => p.id === myPlayerId);
+  const myLiveScore = myLivePlayer?.ecoScore ?? 0;
+  const myLiveRank = [...allPlayers]
+    .filter((p) => !(p as any).isHost)
+    .sort((a, b) => (b.ecoScore ?? 0) - (a.ecoScore ?? 0))
+    .findIndex((p) => p.id === myPlayerId) + 1;
+
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background">
       {/* Header */}
@@ -336,9 +350,21 @@ export default function PlayerView() {
           ) : (
             <div className="w-7 h-7 rounded-full bg-muted" />
           )}
-          <span className="font-semibold text-sm truncate max-w-[120px]">{playerName}</span>
+          <span className="font-semibold text-sm truncate max-w-[100px]">{playerName}</span>
+          {streak >= 2 && (
+            <span className="text-xs font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full px-1.5 py-0.5 flex items-center gap-0.5">
+              🔥{streak}
+            </span>
+          )}
         </div>
-        <div className="text-xs text-muted-foreground font-mono">Room: {roomCode}</div>
+        <div className="flex items-center gap-2 shrink-0">
+          {myLiveRank > 0 && (
+            <span className="text-xs font-bold bg-primary/10 text-primary border border-primary/20 rounded-full px-2 py-0.5">
+              #{myLiveRank}
+            </span>
+          )}
+          <span className="text-sm font-bold text-foreground tabular-nums">{myLiveScore} <span className="text-xs font-normal text-muted-foreground">pts</span></span>
+        </div>
       </div>
 
       <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
@@ -376,10 +402,51 @@ export default function PlayerView() {
         {/* ── BOARD VIEW (between questions) ───────────────────────────── */}
         {phase === "board" && (
           <div className="flex-1 flex flex-col gap-4">
-            <div className="text-center">
-              <h2 className="text-lg font-bold">Round Result</h2>
-              <p className="text-xs text-muted-foreground">Next question coming…</p>
-            </div>
+            {roundResult ? (
+              <>
+                {/* Big correct / wrong feedback */}
+                <div className={`rounded-2xl p-4 flex flex-col gap-1 ${
+                  roundResult.correct
+                    ? "bg-emerald-500/15 border border-emerald-500/30"
+                    : "bg-red-500/15 border border-red-500/30"
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{roundResult.correct ? "✅" : "❌"}</span>
+                    <div>
+                      <p className={`font-bold text-base ${roundResult.correct ? "text-emerald-400" : "text-red-400"}`}>
+                        {roundResult.correct
+                          ? `Correct! +${roundResult.moved} tile${roundResult.moved !== 1 ? "s" : ""}`
+                          : roundResult.moved < 0
+                          ? `Wrong — moved back ${Math.abs(roundResult.moved)} tile${Math.abs(roundResult.moved) !== 1 ? "s" : ""}`
+                          : "Wrong — no move"}
+                      </p>
+                      {streak >= 2 && roundResult.correct && (
+                        <p className="text-xs text-orange-400 font-semibold">🔥 {streak} in a row!</p>
+                      )}
+                    </div>
+                  </div>
+                  {!roundResult.correct && roundResult.correctOption && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Correct answer: <span className="font-semibold text-foreground">{roundResult.correctOption}</span>
+                    </p>
+                  )}
+                  {roundResult.explanation && (
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{roundResult.explanation}</p>
+                  )}
+                </div>
+
+                {/* Tile position */}
+                <div className="text-center text-sm text-muted-foreground">
+                  Now on tile <span className="font-bold text-foreground">{roundResult.newPosition + 1}</span>
+                  {" · "}Eco score: <span className="font-bold text-primary">{myLiveScore}</span>
+                </div>
+              </>
+            ) : (
+              <div className="text-center">
+                <h2 className="text-lg font-bold">Round Result</h2>
+                <p className="text-xs text-muted-foreground">Next question coming…</p>
+              </div>
+            )}
             <PlayerMiniBoard
               players={allPlayers}
               myPlayerId={myPlayerId}
@@ -431,6 +498,8 @@ export default function PlayerView() {
             <div className="grid grid-cols-1 gap-2.5">
               {question.options.map((opt, i) => {
                 const isChosen = chosenIndex === i;
+                const isCorrectAnswer = correctIndexResult !== null && i === correctIndexResult;
+                const isWrongChosen = correctIndexResult !== null && isChosen && !isCorrectAnswer;
                 return (
                   <button
                     key={i}
@@ -438,8 +507,14 @@ export default function PlayerView() {
                     disabled={chosenIndex !== null}
                     className={`
                       w-full rounded-xl border-2 px-4 py-3.5 text-left text-sm font-medium
-                      transition-all duration-150 flex items-center gap-3
-                      ${chosenIndex === null
+                      transition-all duration-200 flex items-center gap-3
+                      ${correctIndexResult !== null
+                        ? isCorrectAnswer
+                          ? "border-emerald-500 bg-emerald-500/20 opacity-100"
+                          : isWrongChosen
+                          ? "border-red-500 bg-red-500/20 opacity-100"
+                          : "border-border/30 bg-card/30 opacity-30 cursor-not-allowed"
+                        : chosenIndex === null
                         ? "border-border bg-card hover:border-primary hover:bg-primary/10 active:scale-[0.98]"
                         : isChosen
                         ? "border-primary bg-primary/20 opacity-100"
@@ -449,9 +524,20 @@ export default function PlayerView() {
                   >
                     <span className={`
                       w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0
-                      ${isChosen ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}
+                      ${correctIndexResult !== null
+                        ? isCorrectAnswer
+                          ? "bg-emerald-500 text-white"
+                          : isWrongChosen
+                          ? "bg-red-500 text-white"
+                          : "bg-muted text-muted-foreground"
+                        : isChosen
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                      }
                     `}>
-                      {answerLetters[i]}
+                      {correctIndexResult !== null
+                        ? isCorrectAnswer ? "✓" : isWrongChosen ? "✗" : answerLetters[i]
+                        : answerLetters[i]}
                     </span>
                     <span>{opt}</span>
                   </button>
