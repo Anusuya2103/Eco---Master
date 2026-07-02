@@ -326,7 +326,7 @@ export function initSocketIO(httpServer: HTTPServer) {
         usedQuestions: new Set(),
         currentQuestion: null,
         currentRound: 0,
-        totalRounds: 25,
+        totalRounds: 50,
         roundTimer: null,
         tickInterval: null,
         roundProcessing: false,
