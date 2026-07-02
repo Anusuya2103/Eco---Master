@@ -51,16 +51,30 @@ export default function HostView() {
   const [finaleWinner, setFinaleWinner] = useState<FinaleWinner | null>(null);
   const [finaleShown, setFinaleShown] = useState(false);
 
-  useEffect(() => {
-    if (!socket) return;
-
-    // Try to rejoin an existing room (e.g. after a brief disconnect), else create a new one
+  // Extracted so it can be called on initial connect AND on every reconnect.
+  // Socket.IO fires "connect" on both the first connection and every automatic
+  // reconnect (new socket.id each time). Without this, a host that drops and
+  // reconnects never re-emits rejoin_host, the server's 60-second grace period
+  // expires, and the game ends under the players.
+  const joinOrRejoin = useCallback(() => {
     const savedCode = sessionStorage.getItem("ecoquest_host_room_code");
     const savedName = sessionStorage.getItem("ecoquest_host_name");
     if (savedCode && savedName === hostName) {
       socket.emit("rejoin_host", { roomCode: savedCode });
     } else {
       socket.emit("create_room", { hostName });
+    }
+  }, [socket, hostName]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    // Re-join on every (re)connect: covers initial connect and automatic
+    // reconnects after a network blip, each of which gets a new socket.id.
+    socket.on("connect", joinOrRejoin);
+    // If already connected when this effect runs, fire immediately.
+    if (socket.connected) {
+      joinOrRejoin();
     }
 
     socket.on("room_created", (data: { roomId: string; roomCode: string; players: Player[] }) => {
@@ -176,6 +190,7 @@ export default function HostView() {
     socket.on("error", handleRejoinError);
 
     return () => {
+      socket.off("connect", joinOrRejoin);
       socket.off("room_created");
       socket.off("host_rejoined");
       socket.off("error", handleRejoinError);
@@ -191,7 +206,7 @@ export default function HostView() {
       socket.off("bonus_event");
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket]);
+  }, [socket, joinOrRejoin]);
 
   const handleFinaleComplete = useCallback(() => {
     setFinaleShown(true);
