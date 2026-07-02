@@ -262,7 +262,7 @@ export default function HostView() {
           <div className="absolute bottom-4 left-4 right-4 bg-card/95 backdrop-blur border rounded-xl p-4 shadow-2xl">
             <div className="flex justify-between items-center mb-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Round {currentQuestion.round}/{currentQuestion.totalRounds} · {currentQuestion.zone}
+                Round {currentQuestion.round} · {currentQuestion.zone}
               </span>
               <span className="font-mono font-bold text-lg">
                 {Math.ceil(currentQuestion.timeLeft / 1000)}s

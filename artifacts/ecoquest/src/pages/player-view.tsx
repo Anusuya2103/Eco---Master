@@ -499,7 +499,7 @@ export default function PlayerView() {
                       question.zone === "human_impact" ? "#9ca3af" : "#86efac",
                   }}
                 >
-                  {question.zone.replace("_", " ")} · Round {question.round}/{question.totalRounds}
+                  {question.zone.replace("_", " ")} · Round {question.round}
                 </span>
               </div>
               <div className={`font-mono font-bold text-lg tabular-nums ${

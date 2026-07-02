@@ -26,7 +26,7 @@ export interface GameRoom {
   usedQuestions: Set<string>;
   currentQuestion: (typeof QUESTIONS)[0] | null;
   currentRound: number;
-  totalRounds: number;
+  totalRounds: number; // kept for socket compat but no longer used as a limit
   roundTimer: ReturnType<typeof setTimeout> | null;
   tickInterval: ReturnType<typeof setInterval> | null;
   roundProcessing: boolean;
@@ -221,7 +221,7 @@ function processRound(io: SocketIOServer, room: GameRoom) {
   const winner = Array.from(room.players.values()).find(
     (p) => p.position >= TILE_COUNT
   );
-  if (winner || room.currentRound >= room.totalRounds) {
+  if (winner) {
     endGame(io, room);
     return;
   }
@@ -391,6 +391,15 @@ export function initSocketIO(httpServer: HTTPServer) {
 
         if (room.state !== "waiting") {
           socket.emit("error", { message: "Game already in progress" });
+          return;
+        }
+
+        // Enforce unique player names within the room (case-insensitive)
+        const nameTaken = Array.from(room.players.values()).some(
+          (p) => p.name.trim().toLowerCase() === playerName.trim().toLowerCase()
+        );
+        if (nameTaken) {
+          socket.emit("error", { message: "That name is already taken in this room" });
           return;
         }
 
