@@ -67,8 +67,10 @@ function getTileType(tileIndex: number): "hazard" | "bonus" | "normal" {
 function buildLeaderboard(room: GameRoom) {
   return Array.from(room.players.values())
     .sort((a, b) => {
-      if (b.ecoScore !== a.ecoScore) return b.ecoScore - a.ecoScore;
+      // Primary: tile position (higher = better)
       if (b.position !== a.position) return b.position - a.position;
+      // Tiebreaker: eco score
+      if (b.ecoScore !== a.ecoScore) return b.ecoScore - a.ecoScore;
       return b.correctAnswers - a.correctAnswers;
     })
     .map((p, i) => ({
@@ -284,7 +286,7 @@ function endGame(io: SocketIOServer, room: GameRoom) {
   const leaderboard = buildLeaderboard(room);
   const winner = Array.from(room.players.values()).find(
     (p) => p.position >= TILE_COUNT
-  ) ?? Array.from(room.players.values()).sort((a, b) => b.ecoScore - a.ecoScore)[0];
+  ) ?? Array.from(room.players.values()).sort((a, b) => b.position - a.position || b.ecoScore - a.ecoScore)[0];
 
   io.to(room.id).emit("game_over", {
     leaderboard,

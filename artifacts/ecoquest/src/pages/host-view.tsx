@@ -308,7 +308,7 @@ export default function HostView() {
           <h3 className="font-semibold text-lg mb-2">Players ({nonHostPlayers.length})</h3>
           {nonHostPlayers
             .slice()
-            .sort((a, b) => (b.ecoScore ?? 0) - (a.ecoScore ?? 0))
+            .sort((a, b) => (b.position ?? 0) - (a.position ?? 0) || (b.ecoScore ?? 0) - (a.ecoScore ?? 0))
             .map((p, i) => {
               const animal = animals.find((a) => a.id === p.animalId);
               return (
@@ -323,8 +323,8 @@ export default function HostView() {
                   </div>
                   <span className="font-medium truncate flex-1 text-sm">{p.name}</span>
                   <div className="text-right shrink-0">
-                    <div className="text-sm font-bold text-primary">{p.ecoScore ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">tile {p.position + 1}</div>
+                    <div className="text-sm font-bold text-primary">Tile {(p.position ?? 0) + 1}</div>
+                    <div className="text-xs text-muted-foreground">{p.ecoScore ?? 0} eco pts</div>
                   </div>
                 </Card>
               );

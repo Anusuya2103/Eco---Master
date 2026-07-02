@@ -53,8 +53,9 @@ router.get("/rooms/:id/leaderboard", (req, res): void => {
 
   const leaderboard = Array.from(room.players.values())
     .sort((a, b) => {
-      if (b.ecoScore !== a.ecoScore) return b.ecoScore - a.ecoScore;
+      // Primary: tile position (higher = better rank)
       if (b.position !== a.position) return b.position - a.position;
+      if (b.ecoScore !== a.ecoScore) return b.ecoScore - a.ecoScore;
       return b.correctAnswers - a.correctAnswers;
     })
     .map((p, i) => ({

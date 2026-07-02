@@ -417,7 +417,7 @@ export default function PlayerView() {
   const myLiveScore = myLivePlayer?.ecoScore ?? 0;
   const myLiveRank = [...allPlayers]
     .filter((p) => !p.isHost)
-    .sort((a, b) => (b.ecoScore ?? 0) - (a.ecoScore ?? 0))
+    .sort((a, b) => (b.position ?? 0) - (a.position ?? 0) || (b.ecoScore ?? 0) - (a.ecoScore ?? 0))
     .findIndex((p) => p.id === myPlayerId) + 1;
 
   return (

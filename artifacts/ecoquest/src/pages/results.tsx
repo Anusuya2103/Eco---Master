@@ -71,8 +71,8 @@ export default function ResultsView() {
                 />
                 <div className="font-semibold text-sm text-center truncate w-full px-1">{top3[1].playerName}</div>
                 <div className={`w-full bg-gradient-to-b ${PODIUM_COLORS[1].bg} rounded-t-xl pt-4 pb-3 px-2 text-center`}>
-                  <div className={`text-xl font-bold ${PODIUM_COLORS[1].text}`}>{top3[1].ecoScore}</div>
-                  <div className={`text-xs ${PODIUM_COLORS[1].text} opacity-80`}>eco pts</div>
+                  <div className={`text-xl font-bold ${PODIUM_COLORS[1].text}`}>Tile {top3[1].position}</div>
+                  <div className={`text-xs ${PODIUM_COLORS[1].text} opacity-80`}>{top3[1].ecoScore} eco pts</div>
                   <div className={`text-xs font-bold mt-1 ${PODIUM_COLORS[1].text}`}>{PODIUM_COLORS[1].label}</div>
                 </div>
               </div>
@@ -93,8 +93,8 @@ export default function ResultsView() {
                 />
                 <div className="font-bold text-sm text-center truncate w-full px-1">{top3[0].playerName}</div>
                 <div className={`w-full bg-gradient-to-b ${PODIUM_COLORS[0].bg} rounded-t-xl pt-6 pb-3 px-2 text-center`}>
-                  <div className={`text-2xl font-bold ${PODIUM_COLORS[0].text}`}>{top3[0].ecoScore}</div>
-                  <div className={`text-xs ${PODIUM_COLORS[0].text} opacity-80`}>eco pts</div>
+                  <div className={`text-2xl font-bold ${PODIUM_COLORS[0].text}`}>Tile {top3[0].position}</div>
+                  <div className={`text-xs ${PODIUM_COLORS[0].text} opacity-80`}>{top3[0].ecoScore} eco pts</div>
                   <div className={`text-xs font-bold mt-1 ${PODIUM_COLORS[0].text}`}>{PODIUM_COLORS[0].label}</div>
                 </div>
               </div>
@@ -114,8 +114,8 @@ export default function ResultsView() {
                 />
                 <div className="font-semibold text-sm text-center truncate w-full px-1">{top3[2].playerName}</div>
                 <div className={`w-full bg-gradient-to-b ${PODIUM_COLORS[2].bg} rounded-t-xl pt-3 pb-3 px-2 text-center`}>
-                  <div className={`text-xl font-bold ${PODIUM_COLORS[2].text}`}>{top3[2].ecoScore}</div>
-                  <div className={`text-xs ${PODIUM_COLORS[2].text} opacity-80`}>eco pts</div>
+                  <div className={`text-xl font-bold ${PODIUM_COLORS[2].text}`}>Tile {top3[2].position}</div>
+                  <div className={`text-xs ${PODIUM_COLORS[2].text} opacity-80`}>{top3[2].ecoScore} eco pts</div>
                   <div className={`text-xs font-bold mt-1 ${PODIUM_COLORS[2].text}`}>{PODIUM_COLORS[2].label}</div>
                 </div>
               </div>
@@ -152,8 +152,8 @@ export default function ResultsView() {
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="font-bold text-primary text-lg">{entry.ecoScore}</div>
-                  <div className="text-xs text-muted-foreground">pts</div>
+                  <div className="font-bold text-primary text-lg">Tile {entry.position}</div>
+                  <div className="text-xs text-muted-foreground">{entry.ecoScore} eco pts</div>
                 </div>
               </div>
             );
