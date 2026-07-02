@@ -124,14 +124,55 @@ export default function PlayerView() {
     }, 5000);
   }, []);
 
+  // On every (re)connect, try to rejoin if we were previously in a room.
+  // Socket.IO assigns a new socket.id on each reconnect, so the server has
+  // already dropped the old player record; we must re-bind via player name.
+  const joinOrRejoinPlayer = useCallback(() => {
+    const savedCode = sessionStorage.getItem("ecoquest_player_room_code");
+    const savedName = sessionStorage.getItem("ecoquest_player_name");
+    const savedToken = sessionStorage.getItem("ecoquest_player_token");
+    if (savedCode && savedName && savedToken) {
+      // Include the server-issued token so the server can verify identity and
+      // prevent one client from impersonating another by name alone.
+      socket.emit("rejoin_player", { roomCode: savedCode, playerName: savedName, rejoinToken: savedToken });
+    }
+  }, [socket]);
+
   useEffect(() => {
     if (!socket) return;
 
-    socket.on("room_joined", (data: { roomId: string; playerId: string; players: PlayerState[] }) => {
+    // Re-join on every (re)connect (covers network blips and page refreshes).
+    // Register the listener BEFORE any immediate call so we never miss the
+    // server's response if the socket is already connected at effect time.
+    socket.on("connect", joinOrRejoinPlayer);
+
+    socket.on("room_joined", (data: { roomId: string; playerId: string; rejoinToken: string; players: PlayerState[] }) => {
       setRoomId(data.roomId);
       setMyPlayerId(data.playerId);
       setAllPlayers(data.players);
       setPhase("waiting");
+      // Persist token — required to authenticate future rejoin_player emits
+      sessionStorage.setItem("ecoquest_player_token", data.rejoinToken);
+    });
+
+    socket.on("player_rejoined", (data: {
+      roomId: string; roomCode: string; playerId: string;
+      players: PlayerState[]; state: string; currentRound: number;
+      currentQuestion: { questionId: string; text: string; options: string[]; zone: string; timeLimit: number; round: number; totalRounds: number } | null;
+    }) => {
+      setRoomId(data.roomId);
+      setMyPlayerId(data.playerId);
+      setAllPlayers(data.players);
+      if (data.currentQuestion) {
+        if (boardTimerRef.current) clearTimeout(boardTimerRef.current);
+        setQuestion(data.currentQuestion);
+        setTimeLeft(data.currentQuestion.timeLimit);
+        setChosenIndex(null);
+        setCorrectIndexResult(null);
+        setPhase("question");
+      } else {
+        setPhase("waiting");
+      }
     });
 
     socket.on("player_joined", (data: { players: PlayerState[] }) => {
@@ -169,6 +210,11 @@ export default function PlayerView() {
     socket.on("game_over", (data: { leaderboard: { playerId: string; ecoScore: number }[]; winner?: { name: string; animalId: string; ecoScore: number; colorPrimary?: string; colorSecondary?: string } }) => {
       audio.playFanfare();
       setPhase("gameover");
+      // Game is finished — clear saved session so next visit starts fresh
+      sessionStorage.removeItem("ecoquest_player_room_code");
+      sessionStorage.removeItem("ecoquest_player_name");
+      sessionStorage.removeItem("ecoquest_player_animal");
+      sessionStorage.removeItem("ecoquest_player_token");
       if (data.winner) setWinner(data.winner);
       setMyPlayerId((myId) => {
         const rank = data.leaderboard.findIndex((l) => l.playerId === myId) + 1;
@@ -183,12 +229,31 @@ export default function PlayerView() {
       setHostDisconnected(true);
     });
 
-    socket.on("error", (data: { message: string }) => {
+    const handleError = (data: { message: string }) => {
+      // If rejoin failed because the room is gone or finished, clear saved
+      // session so the user sees a clean join screen instead of a loop.
+      if (data.message === "Room not found" || data.message === "Game already finished" || data.message === "Player not found in room" || data.message === "Invalid rejoin token") {
+        sessionStorage.removeItem("ecoquest_player_room_code");
+        sessionStorage.removeItem("ecoquest_player_name");
+        sessionStorage.removeItem("ecoquest_player_animal");
+        sessionStorage.removeItem("ecoquest_player_token");
+        setPhase("join");
+      }
       toast({ title: data.message, variant: "destructive" });
-    });
+    };
+
+    socket.on("error", handleError);
+
+    // Fire immediately if already connected — all listeners are now registered
+    // so we won't miss the server's response.
+    if (socket.connected) {
+      joinOrRejoinPlayer();
+    }
 
     return () => {
+      socket.off("connect", joinOrRejoinPlayer);
       socket.off("room_joined");
+      socket.off("player_rejoined");
       socket.off("player_joined");
       socket.off("positions_updated");
       socket.off("question");
@@ -196,9 +261,9 @@ export default function PlayerView() {
       socket.off("round_result", handleRoundResult);
       socket.off("game_over");
       socket.off("host_disconnected");
-      socket.off("error");
+      socket.off("error", handleError);
     };
-  }, [socket, handleRoundResult]);
+  }, [socket, handleRoundResult, joinOrRejoinPlayer]);
 
   const handleJoin = () => {
     if (!playerName.trim()) {
@@ -210,6 +275,10 @@ export default function PlayerView() {
       return;
     }
     audio.init();
+    // Persist so we can rejoin on reconnect
+    sessionStorage.setItem("ecoquest_player_room_code", roomCode || "");
+    sessionStorage.setItem("ecoquest_player_name", playerName.trim());
+    sessionStorage.setItem("ecoquest_player_animal", animalId);
     socket.emit("join_room", { roomCode, playerName: playerName.trim(), animalId });
   };
 

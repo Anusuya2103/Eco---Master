@@ -14,6 +14,10 @@ export interface Player {
   streak: number;
   answeredThisRound: boolean;
   frozenRounds: number;
+  /** Opaque token issued at join; required to prove identity on rejoin. */
+  rejoinToken: string;
+  /** Timer that fires after the grace period to actually remove the player. */
+  disconnectTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface GameRoom {
@@ -346,6 +350,8 @@ export function initSocketIO(httpServer: HTTPServer) {
         streak: 0,
         answeredThisRound: false,
         frozenRounds: 0,
+        rejoinToken: "", // host reconnects via room code + hostName, not token
+        disconnectTimer: null,
       };
 
       room.players.set(socket.id, hostPlayer);
@@ -403,6 +409,12 @@ export function initSocketIO(httpServer: HTTPServer) {
           return;
         }
 
+        // Generate a per-player rejoin token so name-based rejoin can't be
+        // spoofed by another client that just knows the room code + player name.
+        const rejoinToken =
+          Math.random().toString(36).substring(2) +
+          Math.random().toString(36).substring(2);
+
         const player: Player = {
           id: socket.id,
           name: playerName,
@@ -414,6 +426,8 @@ export function initSocketIO(httpServer: HTTPServer) {
           streak: 0,
           answeredThisRound: false,
           frozenRounds: 0,
+          rejoinToken,
+          disconnectTimer: null,
         };
 
         room.players.set(socket.id, player);
@@ -427,6 +441,7 @@ export function initSocketIO(httpServer: HTTPServer) {
           roomId,
           roomCode,
           playerId: socket.id,
+          rejoinToken,
           players,
         });
 
@@ -570,6 +585,81 @@ export function initSocketIO(httpServer: HTTPServer) {
       logger.info({ roomId, socketId: socket.id }, "Host rejoined");
     });
 
+    // ── Rejoin as player after disconnect ──────────────────────────────────
+    socket.on("rejoin_player", ({ roomCode, playerName, rejoinToken }: { roomCode: string; playerName: string; rejoinToken: string }) => {
+      const roomId = codeToRoom.get(roomCode.toUpperCase());
+      if (!roomId) { socket.emit("error", { message: "Room not found" }); return; }
+      const room = rooms.get(roomId);
+      if (!room) { socket.emit("error", { message: "Room not found" }); return; }
+      if (room.state === "finished") { socket.emit("error", { message: "Game already finished" }); return; }
+
+      // Find the existing player record by name (case-insensitive).
+      // Players are kept in room.players during their grace period, so this
+      // lookup succeeds even after a brief disconnect.
+      let foundOldId: string | null = null;
+      let foundPlayer: Player | null = null;
+      for (const [sid, p] of room.players.entries()) {
+        if (!p.isHost && p.name.trim().toLowerCase() === playerName.trim().toLowerCase()) {
+          foundOldId = sid;
+          foundPlayer = p;
+          break;
+        }
+      }
+      if (!foundPlayer || !foundOldId) { socket.emit("error", { message: "Player not found in room" }); return; }
+
+      // Validate the rejoin token to prevent one client from impersonating
+      // another just by knowing the room code and someone else's name.
+      if (foundPlayer.rejoinToken !== rejoinToken) {
+        socket.emit("error", { message: "Invalid rejoin token" });
+        return;
+      }
+
+      // Cancel the grace-period deletion timer
+      if (foundPlayer.disconnectTimer) {
+        clearTimeout(foundPlayer.disconnectTimer);
+        foundPlayer.disconnectTimer = null;
+      }
+
+      // Re-map to new socket id
+      room.players.delete(foundOldId);
+      socketToRoom.delete(foundOldId);
+      socketToPlayer.delete(foundOldId);
+
+      foundPlayer.id = socket.id;
+      room.players.set(socket.id, foundPlayer);
+      socketToRoom.set(socket.id, roomId);
+      socketToPlayer.set(socket.id, socket.id);
+
+      socket.join(roomId);
+
+      const currentQ = room.currentQuestion;
+      socket.emit("player_rejoined", {
+        roomId,
+        roomCode,
+        playerId: socket.id,
+        players: Array.from(room.players.values()),
+        state: room.state,
+        currentRound: room.currentRound,
+        // Send the live question so the player can answer if a round is in progress
+        currentQuestion: currentQ ? {
+          questionId: currentQ.id,
+          text: currentQ.text,
+          options: currentQ.options,
+          zone: currentQ.zone,
+          timeLimit: ROUND_TIME_MS,
+          round: room.currentRound,
+          totalRounds: room.totalRounds,
+        } : null,
+      });
+
+      // Notify others (not the rejoining socket itself)
+      socket.to(roomId).emit("player_joined", {
+        player: foundPlayer,
+        players: Array.from(room.players.values()),
+      });
+      logger.info({ roomId, playerName, socketId: socket.id }, "Player rejoined");
+    });
+
     // ── Disconnect ─────────────────────────────────────────────────────────
     socket.on("disconnect", () => {
       const roomId = socketToRoom.get(socket.id);
@@ -598,20 +688,33 @@ export function initSocketIO(httpServer: HTTPServer) {
               }
             }, 60_000);
           } else {
-            room.players.delete(socket.id);
+            // Give the player 30 s to reconnect before removing their record.
+            // During the grace period their entry stays in room.players so that
+            // rejoin_player can find and re-bind them by token.
             socketToRoom.delete(socket.id);
             socketToPlayer.delete(socket.id);
 
-            if (room.players.size === 0) {
-              if (room.roundTimer) { clearTimeout(room.roundTimer); room.roundTimer = null; }
-              if (room.tickInterval) { clearInterval(room.tickInterval); room.tickInterval = null; }
-              rooms.delete(roomId);
-              codeToRoom.delete(room.code);
-            } else {
-              io.to(roomId).emit("player_left", {
-                playerId: socket.id,
-                players: Array.from(room.players.values()),
-              });
+            const disconnectingPlayer = room.players.get(socket.id);
+            if (disconnectingPlayer) {
+              // Cancel any existing timer (e.g. double-disconnect)
+              if (disconnectingPlayer.disconnectTimer) {
+                clearTimeout(disconnectingPlayer.disconnectTimer);
+              }
+              disconnectingPlayer.disconnectTimer = setTimeout(() => {
+                room.players.delete(socket.id);
+                disconnectingPlayer.disconnectTimer = null;
+                if (room.players.size === 0) {
+                  if (room.roundTimer) { clearTimeout(room.roundTimer); room.roundTimer = null; }
+                  if (room.tickInterval) { clearInterval(room.tickInterval); room.tickInterval = null; }
+                  rooms.delete(roomId);
+                  codeToRoom.delete(room.code);
+                } else {
+                  io.to(roomId).emit("player_left", {
+                    playerId: socket.id,
+                    players: Array.from(room.players.values()),
+                  });
+                }
+              }, 30_000);
             }
           }
         }
