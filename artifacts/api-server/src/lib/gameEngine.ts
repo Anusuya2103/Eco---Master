@@ -16,9 +16,10 @@ export interface Player {
   frozenRounds: number;
   /** Opaque token issued at join; required to prove identity on rejoin. */
   rejoinToken: string;
-  /** Timer that fires after the grace period to actually remove the player. */
-  disconnectTimer: ReturnType<typeof setTimeout> | null;
 }
+
+/** Safe subset of Player emitted over the wire — no tokens or timer handles. */
+export type PlayerView = Omit<Player, "rejoinToken">;
 
 export interface GameRoom {
   id: string;
@@ -44,6 +45,21 @@ export const socketToRoom = new Map<string, string>();
 export const socketToPlayer = new Map<string, string>();
 // Maps room code → room id
 const codeToRoom = new Map<string, string>();
+// Disconnect grace-period timers stored OUTSIDE Player so timer handles never
+// end up in socket emit payloads (they contain circular references that crash
+// the Socket.IO hasBinary serialiser with "Maximum call stack size exceeded").
+const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Strip server-only fields before sending a player over the wire. */
+function serializePlayer(p: Player): PlayerView {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { rejoinToken, ...view } = p;
+  return view;
+}
+
+function serializePlayers(players: Player[]): PlayerView[] {
+  return players.map(serializePlayer);
+}
 
 const TILE_COUNT = 100;
 const ROUND_TIME_MS = 12000;
@@ -189,7 +205,7 @@ function processRound(io: SocketIOServer, room: GameRoom) {
   }
 
   const leaderboard = buildLeaderboard(room);
-  const playersArray = Array.from(room.players.values()).map((p) => ({ ...p }));
+  const playersArray = serializePlayers(Array.from(room.players.values()));
 
   io.to(room.id).emit("round_result", {
     correctIndex: q.correctIndex,
@@ -353,7 +369,6 @@ export function initSocketIO(httpServer: HTTPServer) {
         answeredThisRound: false,
         frozenRounds: 0,
         rejoinToken: "", // host reconnects via room code + hostName, not token
-        disconnectTimer: null,
       };
 
       room.players.set(socket.id, hostPlayer);
@@ -367,7 +382,7 @@ export function initSocketIO(httpServer: HTTPServer) {
         roomId,
         roomCode: code,
         playerId: socket.id,
-        players: Array.from(room.players.values()),
+        players: serializePlayers(Array.from(room.players.values())),
       });
 
       logger.info({ roomId, code, hostName }, "Room created");
@@ -429,7 +444,6 @@ export function initSocketIO(httpServer: HTTPServer) {
           answeredThisRound: false,
           frozenRounds: 0,
           rejoinToken,
-          disconnectTimer: null,
         };
 
         room.players.set(socket.id, player);
@@ -438,7 +452,7 @@ export function initSocketIO(httpServer: HTTPServer) {
 
         socket.join(roomId);
 
-        const players = Array.from(room.players.values());
+        const players = serializePlayers(Array.from(room.players.values()));
         socket.emit("room_joined", {
           roomId,
           roomCode,
@@ -447,7 +461,7 @@ export function initSocketIO(httpServer: HTTPServer) {
           players,
         });
 
-        socket.to(roomId).emit("player_joined", { player, players });
+        socket.to(roomId).emit("player_joined", { player: serializePlayer(player), players });
         logger.info({ roomId, playerName, animalId }, "Player joined room");
       }
     );
@@ -462,8 +476,8 @@ export function initSocketIO(httpServer: HTTPServer) {
       if (!player) return;
 
       player.animalId = animalId;
-      const players = Array.from(room.players.values());
-      io.to(roomId).emit("player_updated", { player, players });
+      const players = serializePlayers(Array.from(room.players.values()));
+      io.to(roomId).emit("player_updated", { player: serializePlayer(player), players });
     });
 
     // ── Start game (Host only) ─────────────────────────────────────────────
@@ -488,7 +502,7 @@ export function initSocketIO(httpServer: HTTPServer) {
       io.to(roomId).emit("game_started", {
         round: 1,
         totalRounds: room.totalRounds,
-        players: Array.from(room.players.values()),
+        players: serializePlayers(Array.from(room.players.values())),
       });
 
       setTimeout(() => startRound(io, room), 1500);
@@ -579,7 +593,7 @@ export function initSocketIO(httpServer: HTTPServer) {
         roomId,
         roomCode,
         playerId: socket.id,
-        players: Array.from(room.players.values()),
+        players: serializePlayers(Array.from(room.players.values())),
         state: room.state,
         currentRound: room.currentRound,
         totalRounds: room.totalRounds,
@@ -617,9 +631,10 @@ export function initSocketIO(httpServer: HTTPServer) {
       }
 
       // Cancel the grace-period deletion timer
-      if (foundPlayer.disconnectTimer) {
-        clearTimeout(foundPlayer.disconnectTimer);
-        foundPlayer.disconnectTimer = null;
+      const existingTimer = disconnectTimers.get(foundOldId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        disconnectTimers.delete(foundOldId);
       }
 
       // Re-map to new socket id
@@ -639,7 +654,7 @@ export function initSocketIO(httpServer: HTTPServer) {
         roomId,
         roomCode,
         playerId: socket.id,
-        players: Array.from(room.players.values()),
+        players: serializePlayers(Array.from(room.players.values())),
         state: room.state,
         currentRound: room.currentRound,
         // Send the live question so the player can answer if a round is in progress
@@ -656,8 +671,8 @@ export function initSocketIO(httpServer: HTTPServer) {
 
       // Notify others (not the rejoining socket itself)
       socket.to(roomId).emit("player_joined", {
-        player: foundPlayer,
-        players: Array.from(room.players.values()),
+        player: serializePlayer(foundPlayer),
+        players: serializePlayers(Array.from(room.players.values())),
       });
       logger.info({ roomId, playerName, socketId: socket.id }, "Player rejoined");
     });
@@ -698,13 +713,14 @@ export function initSocketIO(httpServer: HTTPServer) {
 
             const disconnectingPlayer = room.players.get(socket.id);
             if (disconnectingPlayer) {
-              // Cancel any existing timer (e.g. double-disconnect)
-              if (disconnectingPlayer.disconnectTimer) {
-                clearTimeout(disconnectingPlayer.disconnectTimer);
-              }
-              disconnectingPlayer.disconnectTimer = setTimeout(() => {
-                room.players.delete(socket.id);
-                disconnectingPlayer.disconnectTimer = null;
+              // Cancel any existing timer for this socket (e.g. double-disconnect)
+              const existing = disconnectTimers.get(socket.id);
+              if (existing) clearTimeout(existing);
+
+              const dcSocketId = socket.id; // capture for closure
+              const timer = setTimeout(() => {
+                disconnectTimers.delete(dcSocketId);
+                room.players.delete(dcSocketId);
                 if (room.players.size === 0) {
                   if (room.roundTimer) { clearTimeout(room.roundTimer); room.roundTimer = null; }
                   if (room.tickInterval) { clearInterval(room.tickInterval); room.tickInterval = null; }
@@ -712,11 +728,12 @@ export function initSocketIO(httpServer: HTTPServer) {
                   codeToRoom.delete(room.code);
                 } else {
                   io.to(roomId).emit("player_left", {
-                    playerId: socket.id,
-                    players: Array.from(room.players.values()),
+                    playerId: dcSocketId,
+                    players: serializePlayers(Array.from(room.players.values())),
                   });
                 }
               }, 30_000);
+              disconnectTimers.set(socket.id, timer);
             }
           }
         }
