@@ -1,0 +1,191 @@
+You are a senior game developer and QA engineer.
+
+I want you to thoroughly test and review the entire game currently in this Replit project.
+
+Do NOT immediately rewrite or redesign the game. First, inspect the existing code, structure, assets, UI, game logic, and configuration.
+
+### 1. Check whether the game actually works
+
+Run the game and test the complete user flow:
+
+* Does the game start correctly?
+* Does the main menu work?
+* Do all buttons work?
+* Can the player start, play, pause, resume, restart, and finish a game?
+* Does the game properly detect win/lose/game-over conditions?
+* Does scoring work correctly?
+* Do levels/stages progress correctly?
+* Does the game reset correctly?
+* Are keyboard, mouse, and/or touch controls working?
+* Are there any crashes, console errors, broken imports, missing assets, or runtime errors?
+
+### 2. Test the game logic
+
+Check carefully for:
+
+* Incorrect calculations
+* State-management bugs
+* Variables not being reset
+* Race conditions
+* Infinite loops
+* Incorrect collision/detection logic
+* Incorrect timers
+* Score inconsistencies
+* Progression bugs
+* Edge cases
+* Unexpected behavior when the player clicks buttons repeatedly or performs actions very quickly
+
+Try unusual inputs and sequences of actions instead of only testing the expected path.
+
+### 3. Check the UI/UX
+
+Evaluate whether:
+
+* The interface is easy to understand
+* Buttons have clear labels
+* Important information is visible
+* Text is readable
+* The layout is consistent
+* The game works at different screen sizes
+* Mobile/touch interaction works if applicable
+* There are confusing or unnecessary elements
+* Feedback is provided when the player performs an action
+* Loading, success, failure, and game-over states are clear
+
+### 4. Check visual quality
+
+Review:
+
+* Overall visual consistency
+* Spacing and alignment
+* Typography
+* Animations
+* Transitions
+* Colors and contrast
+* Game elements
+* Backgrounds
+* Icons/assets
+* Visual feedback
+* Whether anything looks unfinished, broken, stretched, pixelated, or out of place
+
+The game should feel like a finished product rather than a prototype.
+
+### 5. Check performance
+
+Look for:
+
+* Unnecessary re-renders
+* Memory leaks
+* Excessive event listeners
+* Expensive loops
+* Unoptimized assets
+* Slow loading
+* Animation/frame-rate problems
+* Unnecessary API calls
+* Excessive DOM manipulation
+
+Test whether performance remains reasonable during extended gameplay.
+
+### 6. Check code quality
+
+Inspect the project for:
+
+* Dead code
+* Duplicate logic
+* Poor component/function structure
+* Hardcoded values that should be configurable
+* Naming problems
+* Unnecessary dependencies
+* Security issues
+* Error handling problems
+* Maintainability issues
+
+### 7. Test like a real player
+
+Play through the game from beginning to end as if you were a real user.
+
+Do not assume that something works just because the code appears correct. Actually run and interact with it wherever possible.
+
+### 8. Produce a QA report
+
+After testing, give me a report in this exact structure:
+
+## Overall Status
+
+Choose one:
+
+* 🟢 Ready
+* 🟡 Needs minor fixes
+* 🟠 Needs major fixes
+* 🔴 Not working
+
+## Critical Bugs
+
+List every bug that prevents the game from working correctly.
+
+For each bug include:
+
+* Bug
+* Where it occurs
+* How to reproduce it
+* Expected behavior
+* Actual behavior
+* Severity
+
+## Gameplay Issues
+
+List problems affecting gameplay or game logic.
+
+## UI/UX Issues
+
+List usability and interface problems.
+
+## Visual Issues
+
+List visual/design problems.
+
+## Performance Issues
+
+List performance problems.
+
+## Code Issues
+
+List important technical/code-quality problems.
+
+## Missing Features
+
+Identify anything that appears incomplete or unfinished.
+
+## Recommended Fixes
+
+Prioritize fixes as:
+
+1. Critical
+2. High
+3. Medium
+4. Low
+
+For every issue, explain exactly what should be changed.
+
+## Final Verdict
+
+Give the game a score out of 10 for:
+
+* Functionality
+* Gameplay
+* UI/UX
+* Visual quality
+* Performance
+* Code quality
+
+Then give an overall score and clearly state whether you think the game is ready to show users.
+
+IMPORTANT:
+
+* Do not blindly modify working code.
+* Do not remove existing features without explaining why.
+* First identify problems through testing.
+* If you find bugs, explain them clearly before fixing them.
+* If you are confident a fix is safe and necessary, you may implement the fix after documenting it.
+* After making any fixes, run the game again and verify that the fixes actually work.
+* Do not stop after checking whether the app compiles. Test the actual gameplay.

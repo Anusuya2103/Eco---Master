@@ -257,6 +257,10 @@ function processRound(io: SocketIOServer, room: GameRoom) {
 }
 
 function startRound(io: SocketIOServer, room: GameRoom) {
+  // The first round is scheduled slightly after start_game. If the host ends
+  // the game during that delay, do not emit a question into the finished room.
+  if (room.state !== "playing") return;
+
   room.currentRound += 1;
   room.roundAnswers.clear();
   room.roundProcessing = false;
