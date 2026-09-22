@@ -5,6 +5,7 @@ import { useListAnimals } from "@workspace/api-client-react";
 import { GameBoard, type HazardEvent, type BonusEvent } from "@/components/game-board";
 import { RestorationFinale, type FinaleWinner } from "@/components/restoration-finale";
 import { AnimalPortrait } from "@/components/animal-portrait";
+import { FinalPodium, type FinalLeaderboardEntry } from "@/components/final-podium";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
@@ -52,6 +53,7 @@ export default function HostView() {
   const [bonusEvent, setBonusEvent] = useState<BonusEvent | null>(null);
   const [ecosystemHealth, setEcosystemHealth] = useState<number>(30);
   const [finaleWinner, setFinaleWinner] = useState<FinaleWinner | null>(null);
+  const [finalLeaderboard, setFinalLeaderboard] = useState<FinalLeaderboardEntry[]>([]);
   const [finaleShown, setFinaleShown] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
     socket.connected ? "connected" : "connecting"
@@ -180,8 +182,9 @@ export default function HostView() {
       setPlayers(data.players);
     });
 
-    socket.on("game_over", (data: { leaderboard: any[]; winner?: any }) => {
+    socket.on("game_over", (data: { leaderboard: FinalLeaderboardEntry[]; winner?: any }) => {
       setGameState("finished");
+      setFinalLeaderboard(data.leaderboard);
       if (data.winner) {
         setFinaleWinner({
           name: data.winner.name,
@@ -201,6 +204,7 @@ export default function HostView() {
       setCurrentQuestion(null);
       setRoundResult(null);
       setFinaleWinner(null);
+      setFinalLeaderboard([]);
       setFinaleShown(false);
       setEcosystemHealth(30);
     });
@@ -329,6 +333,7 @@ export default function HostView() {
                 View Results
               </Button>
             </div>
+            <FinalPodium entries={finalLeaderboard} animals={animals} />
           </div>
         </div>
       )}

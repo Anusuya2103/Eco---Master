@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { PlayerMiniBoard } from "@/components/player-mini-board";
 import { AnimalPortrait } from "@/components/animal-portrait";
+import { FinalPodium, type FinalLeaderboardEntry } from "@/components/final-podium";
 import { toast } from "@/hooks/use-toast";
 import { audio } from "@/lib/audio";
 
@@ -47,6 +48,7 @@ export default function PlayerView() {
   const [roomId, setRoomId] = useState("");
   const [myPlayerId, setMyPlayerId] = useState("");
   const [winner, setWinner] = useState<{ name: string; animalId: string; ecoScore: number; colorPrimary?: string; colorSecondary?: string } | null>(null);
+  const [finalLeaderboard, setFinalLeaderboard] = useState<FinalLeaderboardEntry[]>([]);
   const [myFinalRank, setMyFinalRank] = useState(0);
   const [myFinalScore, setMyFinalScore] = useState(0);
   const [allPlayers, setAllPlayers] = useState<PlayerState[]>([]);
@@ -212,9 +214,10 @@ export default function PlayerView() {
 
     socket.on("round_result", handleRoundResult);
 
-    socket.on("game_over", (data: { leaderboard: { playerId: string; ecoScore: number }[]; winner?: { name: string; animalId: string; ecoScore: number; colorPrimary?: string; colorSecondary?: string } }) => {
+    socket.on("game_over", (data: { leaderboard: FinalLeaderboardEntry[]; winner?: { name: string; animalId: string; ecoScore: number; colorPrimary?: string; colorSecondary?: string } }) => {
       audio.playFanfare();
       setPhase("gameover");
+      setFinalLeaderboard(data.leaderboard);
       // Game is finished — clear saved session so next visit starts fresh
       sessionStorage.removeItem("ecoquest_player_room_code");
       sessionStorage.removeItem("ecoquest_player_name");
@@ -233,6 +236,7 @@ export default function PlayerView() {
     socket.on("rematch_started", (data: { players: PlayerState[] }) => {
       setAllPlayers(data.players);
       setWinner(null);
+      setFinalLeaderboard([]);
       setMyFinalRank(0);
       setMyFinalScore(0);
       setRoundResult(null);
@@ -431,6 +435,8 @@ export default function PlayerView() {
           )}
           <p className="text-sm text-muted-foreground">Final eco-score: <span className="font-bold text-foreground">{myFinalScore}</span></p>
         </div>
+
+        <FinalPodium entries={finalLeaderboard} animals={animals} />
 
         {/* View results */}
         <Button
