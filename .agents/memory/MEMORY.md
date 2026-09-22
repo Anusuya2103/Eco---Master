@@ -1,2 +1,3 @@
 - [EcoQuest room flow](ecoquest-room-flow.md) — Host room creation must go through Socket.IO `create_room`, not REST POST; REST rooms are ephemeral stubs not stored in game engine Map.
 - [OpenAPI default vs server default](openapi-zod-defaults.md) — `default:` in OpenAPI spec is codegen'd into Zod schemas and silently overrides server-side fallbacks; remove defaults from spec if server should control them.
+- [EcoQuest server authority](ecoquest-server-authority.md) — Keep the host in the roster for reconnect/control, but exclude it from every gameplay calculation and rendered player list.

@@ -32,6 +32,7 @@ interface RoundResult {
 }
 
 type Phase = "join" | "waiting" | "board" | "question" | "answered" | "gameover";
+type ConnectionStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
 
 export default function PlayerView() {
   const { roomCode } = useParams();
@@ -58,6 +59,7 @@ export default function PlayerView() {
     options: string[];
     zone: string;
     timeLimit: number;
+    remainingTime?: number;
     round: number;
     totalRounds: number;
   } | null>(null);
@@ -66,6 +68,9 @@ export default function PlayerView() {
 
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null);
   const [hostDisconnected, setHostDisconnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
+    socket.connected ? "connected" : "connecting"
+  );
   const boardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Ref so the round_result handler always reads the current question without
   // being in the useEffect dep array (which would re-register all listeners on
@@ -158,7 +163,7 @@ export default function PlayerView() {
     socket.on("player_rejoined", (data: {
       roomId: string; roomCode: string; playerId: string;
       players: PlayerState[]; state: string; currentRound: number;
-      currentQuestion: { questionId: string; text: string; options: string[]; zone: string; timeLimit: number; round: number; totalRounds: number } | null;
+      currentQuestion: { questionId: string; text: string; options: string[]; zone: string; timeLimit: number; remainingTime?: number; round: number; totalRounds: number } | null;
     }) => {
       setRoomId(data.roomId);
       setMyPlayerId(data.playerId);
@@ -166,7 +171,7 @@ export default function PlayerView() {
       if (data.currentQuestion) {
         if (boardTimerRef.current) clearTimeout(boardTimerRef.current);
         setQuestion(data.currentQuestion);
-        setTimeLeft(data.currentQuestion.timeLimit);
+        setTimeLeft(data.currentQuestion.remainingTime ?? data.currentQuestion.timeLimit);
         setChosenIndex(null);
         setCorrectIndexResult(null);
         setPhase("question");
@@ -185,14 +190,14 @@ export default function PlayerView() {
 
     socket.on("question", (data: {
       questionId: string; text: string; options: string[];
-      zone: string; timeLimit: number; round: number; totalRounds: number;
+      zone: string; timeLimit: number; remainingTime?: number; round: number; totalRounds: number;
     }) => {
       if (boardTimerRef.current) clearTimeout(boardTimerRef.current);
       setHostDisconnected(false);
       setRoundResult(null);
       setCorrectIndexResult(null);
       setQuestion(data);
-      setTimeLeft(data.timeLimit);
+      setTimeLeft(data.remainingTime ?? data.timeLimit);
       setChosenIndex(null);
       setPhase("question");
       audio.setAmbience(data.zone);
@@ -225,9 +230,34 @@ export default function PlayerView() {
       });
     });
 
+    socket.on("rematch_started", (data: { players: PlayerState[] }) => {
+      setAllPlayers(data.players);
+      setWinner(null);
+      setMyFinalRank(0);
+      setMyFinalScore(0);
+      setRoundResult(null);
+      setCorrectIndexResult(null);
+      setQuestion(null);
+      setChosenIndex(null);
+      setHostDisconnected(false);
+      setPhase("waiting");
+    });
+
     socket.on("host_disconnected", () => {
       setHostDisconnected(true);
     });
+
+    const handleConnect = () => setConnectionStatus("connected");
+    const handleDisconnect = () => {
+      setConnectionStatus("disconnected");
+      setHostDisconnected(true);
+    };
+    const handleReconnectAttempt = () => setConnectionStatus("reconnecting");
+    const handleConnectError = () => setConnectionStatus("reconnecting");
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.io.on("reconnect_attempt", handleReconnectAttempt);
+    socket.on("connect_error", handleConnectError);
 
     const handleError = (data: { message: string }) => {
       // If rejoin failed because the room is gone or finished, clear saved
@@ -260,7 +290,12 @@ export default function PlayerView() {
       socket.off("timer_tick");
       socket.off("round_result", handleRoundResult);
       socket.off("game_over");
+      socket.off("rematch_started");
       socket.off("host_disconnected");
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.io.off("reconnect_attempt", handleReconnectAttempt);
+      socket.off("connect_error", handleConnectError);
       socket.off("error", handleError);
     };
   }, [socket, handleRoundResult, joinOrRejoinPlayer]);
@@ -443,6 +478,18 @@ export default function PlayerView() {
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <span
+            className={`text-[10px] font-semibold uppercase tracking-wide ${
+              connectionStatus === "connected" ? "text-emerald-500" : "text-amber-500"
+            }`}
+            aria-live="polite"
+          >
+            {connectionStatus === "connected"
+              ? "Online"
+              : connectionStatus === "reconnecting"
+              ? "Reconnecting"
+              : "Connecting"}
+          </span>
           {myLiveRank > 0 && (
             <span className="text-xs font-bold bg-primary/10 text-primary border border-primary/20 rounded-full px-2 py-0.5">
               #{myLiveRank}

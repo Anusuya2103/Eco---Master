@@ -13,6 +13,7 @@ interface MiniPlayer {
   animalId: string;
   position: number;
   ecoScore: number;
+  isHost?: boolean;
 }
 
 interface RoundResult {
@@ -203,8 +204,9 @@ export function PlayerMiniBoard({ players, myPlayerId, animals, result }: Player
     return () => cancelAnimationFrame(animFrameRef.current);
   }, []);
 
-  const me = players.find((p) => p.id === myPlayerId);
-  const sorted = [...players].sort((a, b) => b.ecoScore - a.ecoScore || b.position - a.position);
+  const activePlayers = players.filter((p) => !p.isHost);
+  const me = activePlayers.find((p) => p.id === myPlayerId);
+  const sorted = [...activePlayers].sort((a, b) => b.position - a.position || b.ecoScore - a.ecoScore);
   const myRank = sorted.findIndex((p) => p.id === myPlayerId) + 1;
   const myZone = me ? getZone(me.position) : null;
 
@@ -219,7 +221,7 @@ export function PlayerMiniBoard({ players, myPlayerId, animals, result }: Player
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-black/30 rounded-lg p-2 text-center">
           <div className="text-xs text-muted-foreground">Tile</div>
-          <div className="text-lg font-mono font-bold text-white">{(me?.position ?? 0) + 1}</div>
+        <div className="text-lg font-mono font-bold text-white">{Math.min(100, (me?.position ?? 0) + 1)}</div>
         </div>
         <div className="bg-black/30 rounded-lg p-2 text-center">
           <div className="text-xs text-muted-foreground">Rank</div>

@@ -4,7 +4,7 @@ import { drawEnvObject } from "../lib/env-objects";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Animal { id: string; emoji: string; colorPrimary?: string; colorSecondary?: string; }
-interface Player { id: string; name: string; animalId: string; position: number; ecoScore?: number; }
+interface Player { id: string; name: string; animalId: string; position: number; ecoScore?: number; isHost?: boolean; }
 export interface HazardEvent { type: string; tileIndex: number; playerId?: string; }
 export interface BonusEvent { tileIndex: number; playerId?: string; }
 interface GameBoardProps { players: Player[]; animals?: Animal[]; highlightPlayerId?: string; hazardEvent?: HazardEvent | null; bonusEvent?: BonusEvent | null; ecosystemHealth?: number; }

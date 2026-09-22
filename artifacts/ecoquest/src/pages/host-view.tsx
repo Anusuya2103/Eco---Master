@@ -21,6 +21,8 @@ interface Player {
   streak: number;
 }
 
+type ConnectionStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
+
 export default function HostView() {
   const search = useSearch();
   const [, setLocation] = useLocation();
@@ -40,6 +42,7 @@ export default function HostView() {
     round: number;
     totalRounds: number;
     timeLeft: number;
+    timeLimit: number;
   } | null>(null);
   const [roundResult, setRoundResult] = useState<{
     correctIndex: number;
@@ -50,6 +53,9 @@ export default function HostView() {
   const [ecosystemHealth, setEcosystemHealth] = useState<number>(30);
   const [finaleWinner, setFinaleWinner] = useState<FinaleWinner | null>(null);
   const [finaleShown, setFinaleShown] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
+    socket.connected ? "connected" : "connecting"
+  );
 
   // Extracted so it can be called on initial connect AND on every reconnect.
   // Socket.IO fires "connect" on both the first connection and every automatic
@@ -85,11 +91,40 @@ export default function HostView() {
       sessionStorage.setItem("ecoquest_host_name", hostName);
     });
 
-    socket.on("host_rejoined", (data: { roomId: string; roomCode: string; players: Player[]; state: string; currentRound: number; totalRounds: number }) => {
+    socket.on("host_rejoined", (data: {
+      roomId: string;
+      roomCode: string;
+      players: Player[];
+      state: string;
+      currentRound: number;
+      totalRounds: number;
+      currentQuestion: {
+        text: string;
+        options: string[];
+        zone: string;
+        round: number;
+        totalRounds: number;
+        timeLimit: number;
+        remainingTime?: number;
+      } | null;
+    }) => {
       setSocketRoomId(data.roomId);
       setRoomCode(data.roomCode);
       setPlayers(data.players);
-      if (data.state === "playing") setGameState("playing");
+      setGameState(data.state as "waiting" | "playing" | "finished");
+      if (data.currentQuestion) {
+        setCurrentQuestion({
+          text: data.currentQuestion.text,
+          options: data.currentQuestion.options,
+          zone: data.currentQuestion.zone,
+          round: data.currentQuestion.round,
+          totalRounds: data.currentQuestion.totalRounds,
+          timeLeft: data.currentQuestion.remainingTime ?? data.currentQuestion.timeLimit,
+          timeLimit: data.currentQuestion.timeLimit,
+        });
+      } else {
+        setCurrentQuestion(null);
+      }
     });
 
     socket.on("player_joined", (data: { players: Player[] }) => {
@@ -106,7 +141,7 @@ export default function HostView() {
       setEcosystemHealth(30);
     });
 
-    socket.on("question", (data: { text: string; options: string[]; zone: string; round: number; totalRounds: number; timeLimit: number }) => {
+    socket.on("question", (data: { text: string; options: string[]; zone: string; round: number; totalRounds: number; timeLimit: number; remainingTime?: number }) => {
       setRoundResult(null);
       setCurrentQuestion({
         text: data.text,
@@ -114,7 +149,8 @@ export default function HostView() {
         zone: data.zone,
         round: data.round,
         totalRounds: data.totalRounds,
-        timeLeft: data.timeLimit,
+        timeLeft: data.remainingTime ?? data.timeLimit,
+        timeLimit: data.timeLimit,
       });
       audio.setAmbience(data.zone);
     });
@@ -146,8 +182,6 @@ export default function HostView() {
 
     socket.on("game_over", (data: { leaderboard: any[]; winner?: any }) => {
       setGameState("finished");
-      sessionStorage.removeItem("ecoquest_host_room_code");
-      sessionStorage.removeItem("ecoquest_host_name");
       if (data.winner) {
         setFinaleWinner({
           name: data.winner.name,
@@ -159,6 +193,16 @@ export default function HostView() {
       } else {
         setFinaleShown(true);
       }
+    });
+
+    socket.on("rematch_started", (data: { players: Player[] }) => {
+      setGameState("waiting");
+      setPlayers(data.players);
+      setCurrentQuestion(null);
+      setRoundResult(null);
+      setFinaleWinner(null);
+      setFinaleShown(false);
+      setEcosystemHealth(30);
     });
 
     socket.on("hazard_event", (data: { type: string; affectedPlayers: { playerId: string; tileIndex: number }[] }) => {
@@ -178,6 +222,15 @@ export default function HostView() {
       }
       setEcosystemHealth(prev => Math.min(100, prev + 6 * (data.affectedPlayers?.length ?? 1)));
     });
+
+    const handleConnect = () => setConnectionStatus("connected");
+    const handleDisconnect = () => setConnectionStatus("disconnected");
+    const handleReconnectAttempt = () => setConnectionStatus("reconnecting");
+    const handleConnectError = () => setConnectionStatus("reconnecting");
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.io.on("reconnect_attempt", handleReconnectAttempt);
+    socket.on("connect_error", handleConnectError);
 
     const handleRejoinError = (data: { message: string }) => {
       // If the saved room is gone or finished, start fresh
@@ -202,8 +255,13 @@ export default function HostView() {
       socket.off("round_result");
       socket.off("positions_updated");
       socket.off("game_over");
+      socket.off("rematch_started");
       socket.off("hazard_event");
       socket.off("bonus_event");
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.io.off("reconnect_attempt", handleReconnectAttempt);
+      socket.off("connect_error", handleConnectError);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, joinOrRejoin]);
@@ -230,6 +288,11 @@ export default function HostView() {
   const handleStop = () => {
     if (!socketRoomId) return;
     socket.emit("stop_game", { roomId: socketRoomId });
+  };
+
+  const handleRematch = () => {
+    if (!socketRoomId) return;
+    socket.emit("rematch_game", { roomId: socketRoomId });
   };
 
   if (!roomCode) {
@@ -271,7 +334,7 @@ export default function HostView() {
       )}
 
       <div className="flex-1 relative">
-        <GameBoard players={players} animals={animals} hazardEvent={hazardEvent} bonusEvent={bonusEvent} ecosystemHealth={ecosystemHealth} />
+        <GameBoard players={nonHostPlayers} animals={animals} hazardEvent={hazardEvent} bonusEvent={bonusEvent} ecosystemHealth={ecosystemHealth} />
 
         {currentQuestion && (
           <div className="absolute bottom-4 left-4 right-4 bg-card/95 backdrop-blur border rounded-xl p-4 shadow-2xl">
@@ -297,7 +360,21 @@ export default function HostView() {
 
       <div className="w-full md:w-80 bg-card border-l flex flex-col p-4 z-10 shadow-2xl">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-primary mb-1">Room Code</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-2xl font-bold text-primary">Room Code</h2>
+            <span
+              className={`text-[10px] font-semibold uppercase tracking-wide ${
+                connectionStatus === "connected" ? "text-emerald-500" : "text-amber-500"
+              }`}
+              aria-live="polite"
+            >
+              {connectionStatus === "connected"
+                ? "Online"
+                : connectionStatus === "reconnecting"
+                ? "Reconnecting"
+                : "Connecting"}
+            </span>
+          </div>
           <div className="bg-muted text-muted-foreground text-4xl font-mono p-4 rounded-xl text-center tracking-widest uppercase">
             {roomCode}
           </div>
@@ -323,7 +400,7 @@ export default function HostView() {
                   </div>
                   <span className="font-medium truncate flex-1 text-sm">{p.name}</span>
                   <div className="text-right shrink-0">
-                    <div className="text-sm font-bold text-primary">Tile {(p.position ?? 0) + 1}</div>
+                    <div className="text-sm font-bold text-primary">Tile {Math.min(100, (p.position ?? 0) + 1)}</div>
                     <div className="text-xs text-muted-foreground">{p.ecoScore ?? 0} eco pts</div>
                   </div>
                 </Card>
@@ -353,9 +430,14 @@ export default function HostView() {
             </Button>
           )}
           {gameState === "finished" && (
-            <Button size="lg" className="w-full text-lg" onClick={handleViewResults}>
-              View Results
-            </Button>
+            <div className="space-y-2">
+              <Button size="lg" className="w-full text-lg" onClick={handleRematch}>
+                Rematch
+              </Button>
+              <Button size="lg" variant="outline" className="w-full text-lg" onClick={handleViewResults}>
+                View Results
+              </Button>
+            </div>
           )}
         </div>
       </div>

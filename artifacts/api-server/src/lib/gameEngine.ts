@@ -37,6 +37,7 @@ export interface GameRoom {
   roundProcessing: boolean;
   roundAnswers: Map<string, number>;
   hostReconnectTimer: ReturnType<typeof setTimeout> | null;
+  roundDeadline: number | null;
 }
 
 // In-memory store — exported so REST routes can read room data
@@ -64,6 +65,32 @@ function serializePlayers(players: Player[]): PlayerView[] {
 const TILE_COUNT = 100;
 const ROUND_TIME_MS = 12000;
 
+function activePlayers(room: GameRoom): Player[] {
+  return Array.from(room.players.values()).filter((player) => !player.isHost);
+}
+
+function getRemainingRoundTime(room: GameRoom): number {
+  if (!room.roundDeadline) return 0;
+  return Math.max(0, room.roundDeadline - Date.now());
+}
+
+function getCurrentQuestionPayload(room: GameRoom) {
+  const question = room.currentQuestion;
+  const remainingTime = getRemainingRoundTime(room);
+  if (!question || remainingTime <= 0) return null;
+
+  return {
+    questionId: question.id,
+    text: question.text,
+    options: question.options,
+    zone: question.zone,
+    timeLimit: ROUND_TIME_MS,
+    remainingTime,
+    round: room.currentRound,
+    totalRounds: room.totalRounds,
+  };
+}
+
 function pickQuestion(room: GameRoom) {
   const available = QUESTIONS.filter((q) => !room.usedQuestions.has(q.id));
   if (available.length === 0) {
@@ -81,7 +108,7 @@ function getTileType(tileIndex: number): "hazard" | "bonus" | "normal" {
 }
 
 function buildLeaderboard(room: GameRoom) {
-  return Array.from(room.players.values())
+  return activePlayers(room)
     .sort((a, b) => {
       // Primary: tile position (higher = better)
       if (b.position !== a.position) return b.position - a.position;
@@ -116,6 +143,7 @@ function processRound(io: SocketIOServer, room: GameRoom) {
   if (!room.currentQuestion) return;
   if (room.roundProcessing) return; // idempotency guard — prevent double-processing
   room.roundProcessing = true;
+  room.roundDeadline = Date.now();
 
   const q = room.currentQuestion;
   const playerResults: {
@@ -129,7 +157,7 @@ function processRound(io: SocketIOServer, room: GameRoom) {
   const hazardAffected: string[] = [];
   const bonusAffected: string[] = [];
 
-  for (const [, player] of room.players) {
+  for (const player of activePlayers(room)) {
     if (player.frozenRounds > 0) {
       player.frozenRounds -= 1;
       playerResults.push({
@@ -240,7 +268,7 @@ function processRound(io: SocketIOServer, room: GameRoom) {
   io.to(room.id).emit("positions_updated", { players: playersArray });
 
   // Check win condition: anyone reached tile 100?
-  const winner = Array.from(room.players.values()).find(
+  const winner = activePlayers(room).find(
     (p) => p.position >= TILE_COUNT
   );
   if (winner) {
@@ -264,6 +292,7 @@ function startRound(io: SocketIOServer, room: GameRoom) {
   room.currentRound += 1;
   room.roundAnswers.clear();
   room.roundProcessing = false;
+  room.roundDeadline = Date.now() + ROUND_TIME_MS;
   const q = pickQuestion(room);
   room.currentQuestion = q;
   room.usedQuestions.add(q.id);
@@ -274,6 +303,7 @@ function startRound(io: SocketIOServer, room: GameRoom) {
     options: q.options,
     zone: q.zone,
     timeLimit: ROUND_TIME_MS,
+    remainingTime: ROUND_TIME_MS,
     round: room.currentRound,
     totalRounds: room.totalRounds,
   });
@@ -282,7 +312,7 @@ function startRound(io: SocketIOServer, room: GameRoom) {
   let timeLeft = ROUND_TIME_MS;
   if (room.tickInterval) clearInterval(room.tickInterval);
   room.tickInterval = setInterval(() => {
-    timeLeft -= 1000;
+    timeLeft = getRemainingRoundTime(room);
     io.to(room.id).emit("timer_tick", { timeLeft });
     if (timeLeft <= 0) {
       clearInterval(room.tickInterval!);
@@ -302,11 +332,13 @@ function endGame(io: SocketIOServer, room: GameRoom) {
   room.state = "finished";
   if (room.roundTimer) { clearTimeout(room.roundTimer); room.roundTimer = null; }
   if (room.tickInterval) { clearInterval(room.tickInterval); room.tickInterval = null; }
+  room.roundDeadline = null;
+  room.currentQuestion = null;
 
   const leaderboard = buildLeaderboard(room);
-  const winner = Array.from(room.players.values()).find(
+  const winner = activePlayers(room).find(
     (p) => p.position >= TILE_COUNT
-  ) ?? Array.from(room.players.values()).sort((a, b) => b.position - a.position || b.ecoScore - a.ecoScore)[0];
+  ) ?? activePlayers(room).sort((a, b) => b.position - a.position || b.ecoScore - a.ecoScore)[0];
 
   io.to(room.id).emit("game_over", {
     leaderboard,
@@ -358,6 +390,7 @@ export function initSocketIO(httpServer: HTTPServer) {
         roundProcessing: false,
         roundAnswers: new Map(),
         hostReconnectTimer: null,
+        roundDeadline: null,
       };
 
       const randomAnimal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
@@ -490,7 +523,7 @@ export function initSocketIO(httpServer: HTTPServer) {
       if (!room) return;
       if (room.hostSocketId !== socket.id) return;
       if (room.state !== "waiting") return;
-      if (room.players.size < 1) return;
+      if (activePlayers(room).length < 1) return;
 
       room.state = "playing";
       room.currentRound = 0;
@@ -531,7 +564,19 @@ export function initSocketIO(httpServer: HTTPServer) {
           return;
 
         const player = room.players.get(socket.id);
-        if (!player || player.answeredThisRound) return;
+        if (!player || player.isHost || player.answeredThisRound) return;
+        if (
+          !Number.isInteger(answerIndex) ||
+          answerIndex < 0 ||
+          answerIndex >= room.currentQuestion.options.length
+        ) {
+          socket.emit("error", { message: "Invalid answer" });
+          return;
+        }
+        if (getRemainingRoundTime(room) <= 0) {
+          socket.emit("error", { message: "Answer time expired" });
+          return;
+        }
 
         player.answeredThisRound = true;
         room.roundAnswers.set(socket.id, answerIndex);
@@ -543,7 +588,7 @@ export function initSocketIO(httpServer: HTTPServer) {
         });
 
         // If all non-host players answered, process early
-        const nonHostCount = Array.from(room.players.values()).filter((p) => !p.isHost).length;
+        const nonHostCount = activePlayers(room).length;
         const nonHostAnswered = Array.from(room.roundAnswers.keys()).filter(
           (id) => !room.players.get(id)?.isHost
         ).length;
@@ -563,6 +608,35 @@ export function initSocketIO(httpServer: HTTPServer) {
 
       logger.info({ roomId }, "Game stopped by host");
       endGame(io, room);
+    });
+
+    // ── Prepare a rematch in the same room ──────────────────────────────────
+    socket.on("rematch_game", ({ roomId }: { roomId: string }) => {
+      const room = rooms.get(roomId);
+      if (!room || room.hostSocketId !== socket.id || room.state !== "finished") return;
+
+      if (room.roundTimer) { clearTimeout(room.roundTimer); room.roundTimer = null; }
+      if (room.tickInterval) { clearInterval(room.tickInterval); room.tickInterval = null; }
+      room.state = "waiting";
+      room.currentRound = 0;
+      room.currentQuestion = null;
+      room.roundDeadline = null;
+      room.roundProcessing = false;
+      room.roundAnswers.clear();
+      room.usedQuestions.clear();
+      for (const player of room.players.values()) {
+        player.position = 0;
+        player.ecoScore = 0;
+        player.correctAnswers = 0;
+        player.streak = 0;
+        player.answeredThisRound = false;
+        player.frozenRounds = 0;
+      }
+
+      io.to(roomId).emit("rematch_started", {
+        players: serializePlayers(Array.from(room.players.values())),
+      });
+      logger.info({ roomId }, "Rematch prepared");
     });
 
     // ── Rejoin as host after disconnect ────────────────────────────────────
@@ -601,6 +675,7 @@ export function initSocketIO(httpServer: HTTPServer) {
         state: room.state,
         currentRound: room.currentRound,
         totalRounds: room.totalRounds,
+        currentQuestion: getCurrentQuestionPayload(room),
       });
       logger.info({ roomId, socketId: socket.id }, "Host rejoined");
     });
@@ -653,7 +728,6 @@ export function initSocketIO(httpServer: HTTPServer) {
 
       socket.join(roomId);
 
-      const currentQ = room.currentQuestion;
       socket.emit("player_rejoined", {
         roomId,
         roomCode,
@@ -662,15 +736,7 @@ export function initSocketIO(httpServer: HTTPServer) {
         state: room.state,
         currentRound: room.currentRound,
         // Send the live question so the player can answer if a round is in progress
-        currentQuestion: currentQ ? {
-          questionId: currentQ.id,
-          text: currentQ.text,
-          options: currentQ.options,
-          zone: currentQ.zone,
-          timeLimit: ROUND_TIME_MS,
-          round: room.currentRound,
-          totalRounds: room.totalRounds,
-        } : null,
+        currentQuestion: getCurrentQuestionPayload(room),
       });
 
       // Notify others (not the rejoining socket itself)

@@ -52,6 +52,7 @@ router.get("/rooms/:id/leaderboard", (req, res): void => {
   }
 
   const leaderboard = Array.from(room.players.values())
+    .filter((p) => !p.isHost)
     .sort((a, b) => {
       // Primary: tile position (higher = better rank)
       if (b.position !== a.position) return b.position - a.position;

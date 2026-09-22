@@ -1,0 +1,236 @@
+Fix all the confirmed issues identified in the latest QA report. Do not redesign the game or remove existing functionality. Make minimal, safe changes and verify every fix by actually running and testing the game.
+
+### 1. Fix the host being treated as a player — HIGH PRIORITY
+
+The host is currently stored in the same player collection and is being included in scoring, movement, ranking, and winner calculations.
+
+Fix this properly:
+
+* The host must NOT be treated as an active gameplay participant.
+* Exclude `isHost` players from:
+
+  * round scoring
+  * answer processing
+  * movement
+  * leaderboard calculations
+  * winner selection
+  * player rankings
+  * player result data
+* Make sure the host still has all required host functionality.
+* Do not simply hide the host from the UI; fix the underlying game logic.
+
+After fixing it, test with:
+
+* 1 host + 1 player
+* 1 host + multiple players
+* multiple rounds
+* timeout rounds
+* game-over
+
+### 2. Fix reconnect timer behavior
+
+Currently, reconnecting players receive the full 12-second question timer again.
+
+Fix this so the server remains authoritative.
+
+Requirements:
+
+* Store the round start time or deadline on the server.
+* Calculate the actual remaining time when a player reconnects.
+* Send the remaining time to the reconnecting player.
+* Do not give extra answering time after reconnecting.
+* Reject answers submitted after the server-side deadline.
+* Make sure the client timer reflects the server's remaining time.
+
+Test reconnecting:
+
+* immediately after a question starts
+* halfway through a question
+* near the end of a question
+* after the timer expires
+
+### 3. Fix host reconnect
+
+When the host reconnects during an active round, restore the complete current game state.
+
+The `host_rejoined` event should include:
+
+* current game state
+* current round
+* current question
+* remaining time
+* players
+* player positions
+* scores
+* board state
+* any other information required to render the active host screen
+
+The host should NOT have to wait for the next question to receive the active question UI.
+
+Test:
+
+1. Start a game.
+2. Start a round.
+3. Disconnect the host.
+4. Reconnect before the round ends.
+5. Confirm the host immediately sees the correct active question and timer.
+6. Confirm the game continues normally.
+
+### 4. Fix ranking consistency
+
+There are currently different ranking calculations in different components.
+
+Make ONE authoritative ranking rule and use it everywhere.
+
+The ranking should be based on the game's intended board position/ranking logic.
+
+Update:
+
+* server leaderboard
+* player header
+* host sidebar
+* `PlayerMiniBoard`
+* results page
+* winner screen
+* any other ranking component
+
+Do not allow different screens to show different ranks for the same player.
+
+### 5. Fix tile numbering
+
+The UI currently mixes zero-based and one-based positions.
+
+Use human-facing tile numbers from 1–100 everywhere.
+
+Make the display consistent in:
+
+* host sidebar
+* player header
+* player board
+* mini board
+* results
+* winner screen
+* leaderboard
+
+Keep internal zero-based indexing if the code needs it, but convert it consistently when displaying the value to users.
+
+### 6. Fix answer-option length
+
+The game requires answer options to be a maximum of 3 words.
+
+Find ALL answer options that exceed 3 words and rewrite them while preserving their meaning.
+
+Examples currently violating the requirement include:
+
+* "Too warm, algae leave"
+* "Capture and store CO2"
+* "Pass filters, enter food chain"
+* "Puerto Rico ~8.4km"
+* "Less pesticide, better soil"
+
+Also create or update a validation check so future answer options cannot exceed 3 words.
+
+### 7. Add connection status feedback
+
+Improve the multiplayer UX by clearly showing:
+
+* Connected
+* Connecting
+* Reconnecting
+* Disconnected
+
+Players should understand what is happening if the server or host temporarily disconnects.
+
+Do not make the UI intrusive.
+
+### 8. Add rematch functionality
+
+After game-over/results:
+
+* Give the host an option to start another game with the same room and players.
+* Preserve the room.
+* Reset scores, positions, rounds, answers, and other game-specific state correctly.
+* Do not accidentally carry state from the previous game.
+* Players should be returned to the appropriate waiting/ready state.
+
+### 9. Add automated multiplayer regression tests
+
+Create tests covering at minimum:
+
+* create room
+* join room
+* start game
+* multiple rounds
+* timeout
+* duplicate answer
+* invalid answer
+* player disconnect
+* player reconnect
+* host disconnect
+* host reconnect
+* immediate stop after start
+* game-over
+* server remaining alive after disconnects
+* host excluded from scoring
+* authoritative reconnect timer
+* consistent ranking
+* consistent tile numbering
+
+### 10. Performance cleanup
+
+Only make safe optimizations after functionality is fixed.
+
+Review:
+
+* repeated `.filter()`
+* repeated `.find()`
+* animal lookups inside animation frames
+* unnecessary canvas redraw work
+* large frontend bundle
+
+Do not sacrifice visual quality or gameplay responsiveness for premature optimization.
+
+### 11. Verification
+
+After implementing the fixes:
+
+1. Run the full application.
+2. Run frontend and backend typechecks.
+3. Run the production build.
+4. Run all automated tests.
+5. Perform an actual multiplayer gameplay test.
+6. Test desktop and mobile layouts.
+7. Check browser console for errors.
+8. Check server logs for errors/crashes.
+9. Specifically verify every issue from the previous QA report is resolved.
+
+Do NOT just tell me that the fixes should work. Actually test them.
+
+At the end, give me:
+
+## Fixed Issues
+
+List every issue you fixed.
+
+## Remaining Issues
+
+Only list issues that are genuinely still present.
+
+## Test Results
+
+Show which tests passed/failed.
+
+## Final Score
+
+Give updated scores for:
+
+* Functionality
+* Gameplay
+* UI/UX
+* Visual quality
+* Performance
+* Code quality
+
+Give an overall score out of 10.
+
+The goal is to take the current 6.5/10 game and make it genuinely ready for users, without unnecessarily changing its existing design or gameplay concept.
